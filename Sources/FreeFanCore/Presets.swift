@@ -15,12 +15,15 @@ public struct Preset: Codable, Equatable, Identifiable, Sendable {
     }
 
     public var curve: FanCurve { FanCurve(points: points) }
+
+    public var isBuiltIn: Bool { PresetLibrary.builtInIDs.contains(id) }
 }
 
-/// On-disk shape of ~/Library/Application Support/FreeFan/presets.json.
 public struct PresetLibrary: Codable, Equatable, Sendable {
     public static let autoID = "auto"
-    public static let currentVersion = 1
+    public static let fullID = "full"
+    /// Version 2 stores only the user's presets; version 1 also stored copies of the built-ins.
+    public static let currentVersion = 2
 
     public var version: Int
     /// A preset id, or PresetLibrary.autoID when the fans follow the system (F{n}md = 0).
@@ -39,42 +42,96 @@ public struct PresetLibrary: Codable, Equatable, Sendable {
 
     public var activePreset: Preset? { preset(id: active) }
 
-    /// Auto active, version 1, with the four built-in presets.
+    public var customPresets: [Preset] { presets.filter { !$0.isBuiltIn } }
+
+    /// Every built-in curve stops the fans (0 %) at or below 30 C. Full is not a curve: it holds both fans at
+    /// maximum speed whatever the temperature.
+    public static let builtIns: [Preset] = [
+        Preset(id: "silent", name: "Silent", input: .max, points: [
+            CurvePoint(t: 30, p: 0), CurvePoint(t: 50, p: 5), CurvePoint(t: 70, p: 15),
+            CurvePoint(t: 85, p: 45), CurvePoint(t: 95, p: 100),
+        ]),
+        Preset(id: "balanced", name: "Balanced", input: .max, points: [
+            CurvePoint(t: 30, p: 0), CurvePoint(t: 45, p: 5), CurvePoint(t: 60, p: 20),
+            CurvePoint(t: 75, p: 45), CurvePoint(t: 90, p: 80), CurvePoint(t: 95, p: 100),
+        ]),
+        Preset(id: "performance", name: "Performance", input: .max, points: [
+            CurvePoint(t: 30, p: 0), CurvePoint(t: 40, p: 20), CurvePoint(t: 55, p: 40),
+            CurvePoint(t: 70, p: 70), CurvePoint(t: 85, p: 100),
+        ]),
+        Preset(id: fullID, name: "Full", input: .max, points: [
+            CurvePoint(t: 0, p: 100), CurvePoint(t: 130, p: 100),
+        ]),
+    ]
+
+    static let builtInIDs = Set(builtIns.map(\.id))
+
     public static func defaults() -> PresetLibrary {
-        PresetLibrary(
-            version: currentVersion,
-            active: autoID,
-            presets: [
-                Preset(id: "silent", name: "Silent", input: FanControlInput.max, points: [
-                    CurvePoint(t: 50, p: 0),
-                    CurvePoint(t: 70, p: 15),
-                    CurvePoint(t: 85, p: 45),
-                    CurvePoint(t: 95, p: 100),
-                ]),
-                Preset(id: "balanced", name: "Balanced", input: FanControlInput.max, points: [
-                    CurvePoint(t: 45, p: 5),
-                    CurvePoint(t: 60, p: 20),
-                    CurvePoint(t: 75, p: 45),
-                    CurvePoint(t: 90, p: 80),
-                    CurvePoint(t: 95, p: 100),
-                ]),
-                Preset(id: "performance", name: "Performance", input: FanControlInput.max, points: [
-                    CurvePoint(t: 40, p: 20),
-                    CurvePoint(t: 55, p: 40),
-                    CurvePoint(t: 70, p: 70),
-                    CurvePoint(t: 85, p: 100),
-                ]),
-                Preset(id: "full", name: "Full", input: FanControlInput.max, points: [
-                    CurvePoint(t: 30, p: 100),
-                    CurvePoint(t: 100, p: 100),
-                ]),
-            ]
-        )
+        PresetLibrary(active: autoID, presets: builtIns)
+    }
+
+    public func newCustomID() -> String {
+        Self.freeCustomID(taken: Set(presets.map(\.id)))
+    }
+
+    /// The built-ins followed by the stored user presets. A stored preset with a built-in id is a version 1 copy:
+    /// dropped when untouched, otherwise kept as a user preset that the active selection follows.
+    static func merging(_ stored: PresetLibrary) -> PresetLibrary {
+        let valid = stored.presets.filter { (try? $0.curve.validate()) != nil }
+        var taken = builtInIDs.union(valid.map(\.id))
+        var active = stored.active
+        var custom: [Preset] = []
+        for preset in valid {
+            guard preset.isBuiltIn else {
+                custom.append(preset)
+                continue
+            }
+            if preset == legacyBuiltIns[preset.id] { continue }
+            let id = freeCustomID(taken: taken)
+            taken.insert(id)
+            let clashes = builtIns.contains { $0.name == preset.name }
+            custom.append(Preset(id: id, name: clashes ? "\(preset.name) (edited)" : preset.name, input: preset.input, points: preset.points))
+            if active == preset.id { active = id }
+        }
+        var merged = PresetLibrary(active: active, presets: builtIns + custom)
+        if active != autoID && merged.preset(id: active) == nil { merged.active = autoID }
+        return merged
+    }
+
+    private static func freeCustomID(taken: Set<String>) -> String {
+        var number = 1
+        while taken.contains("custom-\(number)") { number += 1 }
+        return "custom-\(number)"
+    }
+
+    /// The built-ins as version 1 stored them, to recognise untouched copies.
+    private static let legacyBuiltIns: [String: Preset] = Dictionary(uniqueKeysWithValues: [
+        Preset(id: "silent", name: "Silent", input: .max, points: [
+            CurvePoint(t: 50, p: 0), CurvePoint(t: 70, p: 15), CurvePoint(t: 85, p: 45), CurvePoint(t: 95, p: 100),
+        ]),
+        Preset(id: "balanced", name: "Balanced", input: .max, points: [
+            CurvePoint(t: 45, p: 5), CurvePoint(t: 60, p: 20), CurvePoint(t: 75, p: 45),
+            CurvePoint(t: 90, p: 80), CurvePoint(t: 95, p: 100),
+        ]),
+        Preset(id: "performance", name: "Performance", input: .max, points: [
+            CurvePoint(t: 40, p: 20), CurvePoint(t: 55, p: 40), CurvePoint(t: 70, p: 70), CurvePoint(t: 85, p: 100),
+        ]),
+        Preset(id: fullID, name: "Full", input: .max, points: [CurvePoint(t: 30, p: 100), CurvePoint(t: 100, p: 100)]),
+    ].map { ($0.id, $0) })
+}
+
+public enum PresetStoreError: Error, Equatable, CustomStringConvertible {
+    case builtIn(String)
+
+    public var description: String {
+        switch self {
+        case .builtIn(let id): return "\(id) is a built-in preset and cannot be changed"
+        }
     }
 }
 
-/// Loads and saves the preset library. File format:
-/// { "version": 1, "active": "<id|auto>", "presets": [ { "id", "name", "input", "points": [ { "t", "p" } ] } ] }
+/// Loads and saves the preset library. The file holds only the user's presets:
+/// { "version": 2, "active": "<id|auto>", "presets": [ { "id", "name", "input", "points": [ { "t", "p" } ] } ] }
 public final class PresetStore {
     public static var defaultURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -90,15 +147,12 @@ public final class PresetStore {
         self.library = PresetLibrary.defaults()
     }
 
-    // load() reads the file; when it is missing, write defaults(); when it is unreadable or not decodable,
-    // move it aside to <url>.bak and fall back to defaults; drop presets whose curve fails validate().
-    // save() writes atomically (creating the parent directory first), sorted keys, indented.
-    // setActive/upsert/remove mutate then save.
-
+    /// Missing file: defaults are written. Unreadable file: moved aside to <url>.bak, defaults written. Otherwise
+    /// the stored presets are merged with the built-ins, and the file is rewritten only when that changed it.
     @discardableResult
     public func load() throws -> PresetLibrary {
         let fileManager = FileManager.default
-        if !fileManager.fileExists(atPath: url.path) {
+        guard fileManager.fileExists(atPath: url.path) else {
             library = PresetLibrary.defaults()
             try save()
             return library
@@ -106,8 +160,7 @@ public final class PresetStore {
 
         let decoded: PresetLibrary
         do {
-            let data = try Data(contentsOf: url)
-            decoded = try JSONDecoder().decode(PresetLibrary.self, from: data)
+            decoded = try JSONDecoder().decode(PresetLibrary.self, from: Data(contentsOf: url))
         } catch {
             let backup = URL(fileURLWithPath: url.path + ".bak")
             try? fileManager.removeItem(at: backup)
@@ -117,25 +170,18 @@ public final class PresetStore {
             return library
         }
 
-        var sanitized = decoded
-        sanitized.presets = decoded.presets.filter { (try? $0.curve.validate()) != nil }
-        if sanitized.active != PresetLibrary.autoID && sanitized.preset(id: sanitized.active) == nil {
-            sanitized.active = PresetLibrary.autoID
-        }
-        library = sanitized
-        if sanitized != decoded {
+        library = PresetLibrary.merging(decoded)
+        if stored != decoded {
             try save()
         }
         return library
     }
 
     public func save() throws {
-        let directory = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(library)
-        try data.write(to: url, options: [.atomic])
+        try encoder.encode(stored).write(to: url, options: [.atomic])
     }
 
     public func setActive(_ id: String) throws {
@@ -144,6 +190,7 @@ public final class PresetStore {
     }
 
     public func upsert(_ preset: Preset) throws {
+        guard !preset.isBuiltIn else { throw PresetStoreError.builtIn(preset.id) }
         if let index = library.presets.firstIndex(where: { $0.id == preset.id }) {
             library.presets[index] = preset
         } else {
@@ -153,10 +200,15 @@ public final class PresetStore {
     }
 
     public func remove(id: String) throws {
+        guard !(library.preset(id: id)?.isBuiltIn ?? false) else { throw PresetStoreError.builtIn(id) }
         library.presets.removeAll { $0.id == id }
         if library.active == id {
             library.active = PresetLibrary.autoID
         }
         try save()
+    }
+
+    private var stored: PresetLibrary {
+        PresetLibrary(active: library.active, presets: library.customPresets)
     }
 }
