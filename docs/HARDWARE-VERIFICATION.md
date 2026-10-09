@@ -101,7 +101,7 @@ Remeasured with the popover build installed in `/Applications`, from the cumulat
 | FreeFanHelper | controlling (1 s tick), 180 s | 0.11 % | 6.9 MB resident |
 | FreeFanHelper | idle in Auto (no client), 120 s | 0.000 % | 6.2 MB resident |
 
-The helper is at its 0.1 % budget only while it controls the fans; idle it uses no CPU at all. kill -9
+While it controls the fans the helper measured 0.106 %, just over its 0.1 % budget; idle it uses no CPU at all. kill -9
 of the app returned `md=0` in 10 ms and SIGTERM of the helper in 19 ms (independent probe), after
 which launchd restarted the helper and the app took control again.
 
