@@ -38,27 +38,27 @@ public struct MenuBarValues: Equatable, Sendable {
 }
 
 /// Renders the user's menu bar text. A token is `{name}` for one of `tokens`; anything else, including a brace
-/// without a matching token, stays literal. Substituted values are never expanded again.
+/// without a matching token, stays literal. Substituted values are never expanded again. An empty template renders
+/// as empty text.
 public enum MenuBarTemplate {
     public static let tokens = ["max", "cpu", "gpu", "bat", "rpm", "rpm0", "rpm1", "preset"]
     public static let maxRenderedLength = 40
 
     public static func render(_ template: String, _ values: MenuBarValues) -> String {
-        let source = template.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? AppSettings.defaultTemplate : template
         var result = ""
-        var index = source.startIndex
-        while index < source.endIndex {
-            let character = source[index]
-            if character == "{", let close = source[index...].firstIndex(of: "}") {
-                let name = String(source[source.index(after: index)..<close])
+        var index = template.startIndex
+        while index < template.endIndex {
+            let character = template[index]
+            if character == "{", let close = template[index...].firstIndex(of: "}") {
+                let name = String(template[template.index(after: index)..<close])
                 if let text = text(for: name, in: values) {
                     result += text
-                    index = source.index(after: close)
+                    index = template.index(after: close)
                     continue
                 }
             }
             result.append(character)
-            index = source.index(after: index)
+            index = template.index(after: index)
         }
         return String(result.prefix(maxRenderedLength))
     }

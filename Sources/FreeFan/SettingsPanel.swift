@@ -44,7 +44,7 @@ final class SettingsPanel: NSView, NSTextFieldDelegate {
         title.font = .systemFont(ofSize: 13, weight: .semibold)
 
         field.stringValue = settings.settings.menuBarTemplate
-        field.placeholderString = AppSettings.defaultTemplate
+        field.placeholderString = "No text"
         field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         field.delegate = self
         field.target = self
@@ -52,10 +52,10 @@ final class SettingsPanel: NSView, NSTextFieldDelegate {
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.setAccessibilityLabel("Menu bar text template")
 
-        let reset = NSButton(title: "Reset", target: self, action: #selector(resetTapped(_:)))
+        let reset = NSButton(title: "Default", target: self, action: #selector(resetTapped(_:)))
         reset.bezelStyle = .rounded
         reset.controlSize = .small
-        reset.toolTip = "Restore \(AppSettings.defaultTemplate)"
+        reset.toolTip = "Use \(AppSettings.defaultTemplate)"
 
         let fieldRow = NSStackView(views: [field, reset])
         fieldRow.orientation = .horizontal
@@ -89,7 +89,7 @@ final class SettingsPanel: NSView, NSTextFieldDelegate {
         dotToggle.state = settings.settings.showPressureDot ? .on : .off
         dotToggle.font = .systemFont(ofSize: 12)
 
-        let hint = NSTextField(wrappingLabelWithString: "Click a name to insert it. At most \(MenuBarTemplate.maxRenderedLength) characters are shown; text that is not a name is shown as typed.")
+        let hint = NSTextField(wrappingLabelWithString: "Click a name to insert it. Leave the field empty to show only the dot. At most \(MenuBarTemplate.maxRenderedLength) characters are shown; text that is not a name is shown as typed.")
         hint.font = .systemFont(ofSize: 10)
         hint.textColor = .secondaryLabelColor
         hint.preferredMaxLayoutWidth = width
@@ -128,14 +128,14 @@ final class SettingsPanel: NSView, NSTextFieldDelegate {
     private func refreshPreview() {
         let draft = field.currentEditor()?.string ?? field.stringValue
         let rendered = MenuBarTemplate.render(draft, values)
-        if preview.stringValue != rendered { preview.stringValue = rendered }
+        let shown = rendered.isEmpty ? "(no text)" : rendered
+        if preview.stringValue != shown { preview.stringValue = shown }
+        preview.textColor = rendered.isEmpty ? .tertiaryLabelColor : .labelColor
     }
 
     private func commitTemplate() {
-        let draft = field.stringValue
-        let normalized = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? AppSettings.defaultTemplate : draft
         let before = settings.settings.menuBarTemplate
-        settings.setTemplate(normalized)
+        settings.setTemplate(field.stringValue)
         let after = settings.settings.menuBarTemplate
         if field.stringValue != after { field.stringValue = after }
         refreshPreview()
