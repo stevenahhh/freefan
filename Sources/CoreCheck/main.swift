@@ -1,6 +1,7 @@
 import Foundation
 import CheckKit
 import FreeFanCore
+import FreeFanSMC
 
 // Executable check for FreeFanCore: fan curve model, preset store and helper wire protocol.
 // XCTest / Swift Testing are unavailable on a Command Line Tools only install, so this binary
@@ -292,5 +293,34 @@ check.expect(HelperStatus.parse("OK mode=curve temp=abc rpm=- writes=0") == nil,
 check.expect(HelperStatus.parse("OK mode=curve temp=50 rpm=- writes=x") == nil, "status parse rejects non-numeric writes")
 check.expect(HelperStatus.parse("OK mode=curve temp=50 rpm=- writes=0 extra") == nil, "status parse rejects trailing junk")
 check.expect(HelperStatus.parse("NO mode=curve temp=50 rpm=- writes=0") == nil, "status parse rejects missing OK")
+
+// MARK: - Battery input
+
+check.expect(FanControlInput.allCases.contains(.battery), "battery is a selectable curve input")
+expectRoundTrip("CURVE battery", "CURVE battery 20:10,40:30", serializedAs: "CURVE battery 20:10,40:30")
+expectProtoError("CURVE battery non-finite", .badValue("non-finite temperature: nan"), "CURVE battery nan:1,50:2")
+expectProtoError("CURVE battery misspelled", .badValue("unknown curve input batt"), "CURVE batt 20:0,40:100")
+expectProtoError("CURVE battery one point", .badValue("curve needs at least 2 points (has 1)"), "CURVE battery 30:10")
+
+do {
+    let preset = Preset(id: "bat", name: "Battery", input: .battery, points: silentCurve().points)
+    let encoded = try? JSONEncoder().encode(preset)
+    check.expect(encoded.map { String(decoding: $0, as: UTF8.self).contains("\"input\":\"battery\"") } ?? false,
+                 "a battery preset is stored with input \"battery\"")
+    let decoded = encoded.flatMap { try? JSONDecoder().decode(Preset.self, from: $0) }
+    check.expectEqual(decoded, preset, "a battery preset survives an encode/decode round trip")
+}
+
+do {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("freefan-corecheck-v1-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let url = root.appendingPathComponent("presets.json")
+    _ = try? PresetStore(url: url).load()
+    let before = try? Data(contentsOf: url)
+    let library = try? PresetStore(url: url).load()
+    let after = try? Data(contentsOf: url)
+    check.expect(before != nil && before == after, "loading an existing v1 presets file leaves its bytes untouched")
+    check.expect(library?.presets.allSatisfy { $0.input == .max } ?? false, "the v1 presets keep their max input")
+}
 
 exit(check.summary())

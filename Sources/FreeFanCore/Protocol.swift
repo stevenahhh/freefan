@@ -31,7 +31,7 @@ public enum HelperPaths {
 
 /// One line-protocol command, newline terminated over the Unix socket.
 ///
-/// PING | STATUS | AUTO | CURVE <max|cpu|gpu> <t:p,t:p,...> | FIXED <percent>
+/// PING | STATUS | AUTO | CURVE <max|cpu|gpu|battery> <t:p,t:p,...> | FIXED <percent>
 public enum HelperCommand: Equatable, Sendable {
     case ping
     case status

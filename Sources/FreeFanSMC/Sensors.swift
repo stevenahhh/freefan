@@ -7,6 +7,8 @@ public enum FanControlInput: String, Codable, CaseIterable, Sendable {
     case max
     case cpu
     case gpu
+    /// Mean of every battery temperature sensor.
+    case battery
 }
 
 // MARK: - Key catalogue (verified present on Mac17,9 / M5 Pro)
@@ -24,6 +26,17 @@ public enum SensorCatalog {
     public static let gpuKeys: [String] = [
         "Tg0U", "Tg0X", "Tg0d", "Tg0g", "Tg0j", "Tg1Y", "Tg1c",
     ]
+
+    /// TB0T TB1T TB2T: the battery pack sensors (flt, Celsius). All three verified present on Mac17,9.
+    public static let batteryKeys: [String] = ["TB0T", "TB1T", "TB2T"]
+
+    /// Mean of the usable battery readings. A reading counts when it is finite, above 0 (a dead sensor reports
+    /// 0.0) and not above the global ceiling; nil when none counts, so one bad sensor cannot skew the mean.
+    public static func batteryMean(_ values: [Float]) -> Float? {
+        let usable = values.filter { $0.isFinite && $0 > 0 && $0 <= temperatureCeiling }
+        guard !usable.isEmpty else { return nil }
+        return usable.reduce(0, +) / Float(usable.count)
+    }
 
     /// Readings outside this window (or NaN) are discarded.
     public static let temperatureFloor: Float = 0
@@ -76,11 +89,14 @@ public struct FanReading: Equatable, Sendable {
 public struct SensorReading: Equatable, Sendable {
     public let cpu: Float?
     public let gpu: Float?
+    /// Mean of the battery sensors.
+    public let battery: Float?
     public let fans: [FanReading]
 
-    public init(cpu: Float?, gpu: Float?, fans: [FanReading]) {
+    public init(cpu: Float?, gpu: Float?, battery: Float? = nil, fans: [FanReading]) {
         self.cpu = cpu
         self.gpu = gpu
+        self.battery = battery
         self.fans = fans
     }
 
@@ -89,6 +105,7 @@ public struct SensorReading: Equatable, Sendable {
         switch kind {
         case .cpu: return cpu
         case .gpu: return gpu
+        case .battery: return battery
         case .max:
             switch (cpu, gpu) {
             case let (c?, g?): return max(c, g)
@@ -109,6 +126,7 @@ public final class Telemetry {
     private let smc: SMC
     private let presentCPUKeys: [String]
     private let presentGPUKeys: [String]
+    private let presentBatteryKeys: [String]
 
     /// Discovery happens exactly once here. A key that does not exist is probed once during init and
     /// then never read again (an absent key costs about 50x a present one), so the discovered lists
@@ -118,6 +136,7 @@ public final class Telemetry {
 
         self.presentCPUKeys = SensorCatalog.cpuKeys.filter { smc.keyExists($0) }
         self.presentGPUKeys = SensorCatalog.gpuKeys.filter { smc.keyExists($0) }
+        self.presentBatteryKeys = SensorCatalog.batteryKeys.filter { smc.keyExists($0) }
 
         // FNum is a ui8 key on this platform; fall back to a ui32 variant if that is what is present.
         var fanCount = 0
@@ -139,7 +158,7 @@ public final class Telemetry {
         self.fans = discovered
     }
 
-    /// Reads CPU max, GPU max and per-fan actual/target/manual. Failed or out-of-range values are nil.
+    /// Reads CPU max, GPU max, the battery mean and per-fan actual/target/manual. Failed or out-of-range values are nil.
     public func read() -> SensorReading {
         let cpu = maxTemperature(presentCPUKeys)
         let gpu = maxTemperature(presentGPUKeys)
@@ -153,7 +172,8 @@ public final class Telemetry {
             readings.append(FanReading(index: fan.index, rpm: rpm, targetRPM: target, manual: manual))
         }
 
-        return SensorReading(cpu: cpu, gpu: gpu, fans: readings)
+        let battery = SensorCatalog.batteryMean(presentBatteryKeys.compactMap { try? smc.readFloat($0) })
+        return SensorReading(cpu: cpu, gpu: gpu, battery: battery, fans: readings)
     }
 
     // MARK: Internals

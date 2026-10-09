@@ -280,6 +280,7 @@ final class CurveEditorWindowController: NSWindowController, NSWindowDelegate {
         case .max: return "Max (CPU or GPU)"
         case .cpu: return "CPU"
         case .gpu: return "GPU"
+        case .battery: return "Battery (average)"
         }
     }
 
