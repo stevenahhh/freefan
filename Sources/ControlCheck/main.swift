@@ -184,4 +184,58 @@ do {
     check.expectEqual(c.tick(temperature: 60, fans: obs(manual: true)), [], "tick in auto mode returns no actions")
 }
 
+// 12. The panic latch watches the hottest CPU/GPU sensor, not only the curve's input.
+do {
+    let c = FanController(fans: fans)
+    _ = check.expectNoThrow("valid curve accepted") { try c.setCurve(steep, input: .cpu) }
+    let g1 = c.tick(temperature: 50, safetyTemperature: 96, fans: obs(manual: false))
+    check.expectEqual(c.mode, .panic, "a hot SoC latches panic although the input reads 50")
+    for fan in fans {
+        check.expect(g1.contains(.setTarget(fan: fan.index, rpm: fan.maxRPM)), "fan \(fan.index) forced to Mx by the guard")
+    }
+    assertInRange("guard panic", g1)
+
+    _ = c.tick(temperature: 50, safetyTemperature: 90, fans: obs(manual: true))
+    check.expectEqual(c.mode, .panic, "panic holds while the SoC stays at or above 88")
+
+    let g3 = c.tick(temperature: 50, safetyTemperature: 80, fans: obs(manual: true))
+    check.expectEqual(c.mode, .curve, "panic clears once the SoC drops below 88")
+    for fan in fans {
+        check.expect(g3.contains(.setTarget(fan: fan.index, rpm: fan.rpm(percent: steep.percent(at: 50)))), "fan \(fan.index) returns to the curve at the input temperature")
+    }
+}
+
+// 13. A SoC reading below the panic threshold, nil, or invalid never changes what the curve does.
+do {
+    for (label, safety) in [("warm", Float(94)), ("nil", nil), ("NaN", Float.nan), ("infinite", Float.infinity), ("above ceiling", Float(500)), ("negative", Float(-5))] as [(String, Float?)] {
+        let c = FanController(fans: fans)
+        _ = check.expectNoThrow("valid curve accepted") { try c.setCurve(steep, input: .cpu) }
+        let a = c.tick(temperature: 50, safetyTemperature: safety, fans: obs(manual: false))
+        check.expectEqual(c.mode, .curve, "safety \(label) does not latch panic")
+        for (i, fan) in fans.enumerated() {
+            check.expectEqual(a[i * 2], .setTarget(fan: fan.index, rpm: fan.rpm(percent: steep.percent(at: 50))), "safety \(label): fan \(fan.index) follows the input")
+        }
+    }
+}
+
+// 14. controlInputs pairs the curve input with the hottest SoC sensor and refuses to run blind.
+do {
+    let hotGPU = SensorReading(cpu: 50, gpu: 97, fans: [])
+    check.expectEqual(hotGPU.controlInputs(for: .max).temperature, Float?.some(97), "max input is the hottest die")
+    check.expectEqual(hotGPU.controlInputs(for: .max).safety, Float?.some(97), "max safety is the hottest die")
+    check.expectEqual(hotGPU.controlInputs(for: .cpu).temperature, Float?.some(50), "cpu input is the CPU reading")
+    check.expectEqual(hotGPU.controlInputs(for: .cpu).safety, Float?.some(97), "cpu input is still guarded by the hot GPU")
+    check.expectEqual(hotGPU.controlInputs(for: .gpu).temperature, Float?.some(97), "gpu input is the GPU reading")
+
+    let noGPU = SensorReading(cpu: 60, gpu: nil, fans: [])
+    check.expectEqual(noGPU.controlInputs(for: .gpu).temperature, Float?.none, "a missing GPU reading is no temperature")
+    check.expectEqual(noGPU.controlInputs(for: .gpu).safety, Float?.some(60), "the CPU still guards a gpu curve")
+
+    let blind = SensorReading(cpu: nil, gpu: nil, fans: [])
+    for kind in FanControlInput.allCases {
+        check.expectEqual(blind.controlInputs(for: kind).temperature, Float?.none, "\(kind.rawValue): no SoC reading, no temperature")
+        check.expectEqual(blind.controlInputs(for: kind).safety, Float?.none, "\(kind.rawValue): no SoC reading, no safety")
+    }
+}
+
 exit(check.summary())

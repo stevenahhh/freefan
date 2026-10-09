@@ -230,9 +230,10 @@ final class HelperDaemon {
         guard !asleep else { return }
 
         let reading = telemetry.read()
-        let temperature = reading.input(activeInput)
+        let inputs = reading.controlInputs(for: activeInput)
+        let temperature = inputs.temperature
         let observations = reading.fans.map { FanObservation(rpm: $0.rpm, manual: $0.manual) }
-        let actions = controller.tick(temperature: temperature, fans: observations)
+        let actions = controller.tick(temperature: temperature, safetyTemperature: inputs.safety, fans: observations)
 
         // Strictly in the order returned: a fan's setTarget always precedes its setManual.
         for action in actions {
