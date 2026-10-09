@@ -14,6 +14,7 @@ struct LiveSnapshot {
 
 struct PopoverActions {
     var presetsChanged: () -> Void
+    var settingsChanged: () -> Void
     var installHelper: () -> Void
     var uninstallHelper: () -> Void
     var quit: () -> Void
@@ -26,18 +27,26 @@ final class PopoverViewController: NSViewController {
         static let inner: CGFloat = width - margin * 2
     }
 
+    /// Called with the content size the popover should take. A shown NSPopover follows `contentSize`, not
+    /// `preferredContentSize`, so whoever owns the popover applies it.
+    var onPreferredSizeChange: ((NSSize) -> Void)?
+
     private let store: PresetStore
     private let actions: PopoverActions
     private let header = TelemetryHeaderView(width: Layout.inner)
     private let chips = PresetChipsView(width: Layout.inner)
     private let editor: CurveEditorPanel
+    private let settingsPanel: SettingsPanel
     private let helperButton = NSButton(title: "", target: nil, action: nil)
+    private let pageButton = NSButton(title: "", target: nil, action: nil)
     private var snapshot: LiveSnapshot?
+    private var showingSettings = false
 
-    init(store: PresetStore, actions: PopoverActions) {
+    init(store: PresetStore, settings: SettingsStore, actions: PopoverActions) {
         self.store = store
         self.actions = actions
         self.editor = CurveEditorPanel(store: store, width: Layout.inner)
+        self.settingsPanel = SettingsPanel(settings: settings, width: Layout.inner)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -52,13 +61,18 @@ final class PopoverViewController: NSViewController {
             self.editor.addPreset(copying: self.store.library.activePreset)
         }
         editor.onLibraryChange = { [weak self] in self?.libraryChanged() }
+        settingsPanel.onChange = { [weak self] in self?.actions.settingsChanged() }
+        settingsPanel.isHidden = true
 
         helperButton.target = self
         helperButton.action = #selector(helperTapped(_:))
+        pageButton.target = self
+        pageButton.action = #selector(pageTapped(_:))
+        updatePageButton()
         let quitButton = NSButton(title: "Quit FreeFan", target: self, action: #selector(quitTapped(_:)))
         quitButton.keyEquivalent = "q"
         quitButton.keyEquivalentModifierMask = .command
-        for button in [helperButton, quitButton] {
+        for button in [helperButton, pageButton, quitButton] {
             button.isBordered = false
             button.font = .systemFont(ofSize: 11)
             button.contentTintColor = .secondaryLabelColor
@@ -66,13 +80,14 @@ final class PopoverViewController: NSViewController {
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
-        let footer = NSStackView(views: [helperButton, spacer, quitButton])
+        let footer = NSStackView(views: [helperButton, pageButton, spacer, quitButton])
         footer.orientation = .horizontal
+        footer.spacing = 14
 
         let separator = NSBox()
         separator.boxType = .separator
 
-        let sections: [NSView] = [header, chips, editor, separator, footer]
+        let sections: [NSView] = [header, chips, editor, settingsPanel, separator, footer]
         let stack = NSStackView(views: sections)
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -113,6 +128,8 @@ final class PopoverViewController: NSViewController {
         let title = snapshot.helperInstalled ? "Uninstall Helper\u{2026}" : "Install Helper\u{2026}"
         if helperButton.title != title { helperButton.title = title }
 
+        settingsPanel.update(values: MenuBarValues(reading: snapshot.reading, presetName: store.library.activePreset?.name ?? "Auto"))
+
         let temperature = editor.activeInput.flatMap { snapshot.reading?.input($0) }
         editor.updateLive(
             temperature: temperature,
@@ -128,6 +145,7 @@ final class PopoverViewController: NSViewController {
         guard abs(size.height - preferredContentSize.height) > 1 else { return }
         view.frame.size = size
         preferredContentSize = size
+        onPreferredSizeChange?(size)
     }
 
     private func refreshHeader() {
@@ -159,6 +177,24 @@ final class PopoverViewController: NSViewController {
         } else {
             actions.installHelper()
         }
+    }
+
+    @objc private func pageTapped(_ sender: Any?) {
+        showingSettings.toggle()
+        view.window?.makeFirstResponder(nil)
+        chips.isHidden = showingSettings
+        editor.isHidden = showingSettings
+        settingsPanel.isHidden = !showingSettings
+        updatePageButton()
+        resize()
+    }
+
+    private func updatePageButton() {
+        let title = showingSettings ? "Back to Presets" : "Menu Bar Text\u{2026}"
+        let symbol = showingSettings ? "chevron.backward" : "textformat"
+        if pageButton.title != title { pageButton.title = title }
+        pageButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        pageButton.imagePosition = .imageLeading
     }
 
     @objc private func quitTapped(_ sender: Any?) {

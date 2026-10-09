@@ -2,7 +2,7 @@
 
 Minimal macOS menu-bar fan control for Apple Silicon.
 
-- Live temperatures and fan RPM in the menu bar
+- Live temperatures and fan RPM in the menu bar, in a format you write yourself
 - Temperature-to-speed curves edited on a graph
 - Saved presets, one click away in the popover
 - Near-zero CPU and memory overhead
@@ -24,6 +24,14 @@ The app shows `52° 2.3k` in the menu bar. Clicking it opens a popover with live
 fan readings, the memory pressure, a chip per preset and the curve editor. Clicking a chip activates
 that preset and shows its curve; every edit is saved when you let go of the mouse and sent to the
 daemon right away. **Auto** returns the fans to the system. "Auto" is a mode, not a preset.
+
+**Menu Bar Text…** in the popover footer opens the settings page. The text is a template; click a name
+to insert it, and the preview shows what the menu bar will say. The names are `{max}` (hottest of CPU
+and GPU), `{cpu}`, `{gpu}`, `{bat}` (battery average), `{rpm}` (fastest fan), `{rpm0}`, `{rpm1}` and
+`{preset}`. Anything that is not a name is shown as typed, and at most 40 characters are shown. The
+memory pressure dot can be turned off on the same page. Settings live in
+`~/Library/Application Support/FreeFan/settings.json`; an unreadable file is kept as `settings.json.bak`
+and the defaults are used.
 
 ## Layout
 
