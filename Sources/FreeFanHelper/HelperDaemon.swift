@@ -280,6 +280,7 @@ final class HelperDaemon {
                 try smc.writeUInt8(info.modeKey, 1)
             } else {
                 try smc.writeUInt8(info.modeKey, 0)
+                lastTargets[fan] = 0
             }
         }
     }
