@@ -243,7 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func applyStatusContent(title: String, pressure: MemoryPressure?) {
         guard let button = statusItem.button else { return }
         guard let pressure else {
-            button.image = nil
+            button.image = title.isEmpty ? Self.fallbackSymbol : nil
             button.title = title
             return
         }
@@ -253,6 +253,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             .foregroundColor: Self.menuBarTextColor(for: button.effectiveAppearance),
         ])
     }
+
+    /// Shown when there is neither text nor a dot, so the item can still be clicked.
+    private static let fallbackSymbol: NSImage? = {
+        let image = NSImage(systemSymbolName: "fan", accessibilityDescription: "FreeFan")
+        image?.isTemplate = true
+        return image
+    }()
 
     /// A button holding a full-color image is drawn without the menu bar's vibrancy, so its text needs an explicit
     /// color that follows the bar's light or dark appearance.

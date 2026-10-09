@@ -35,9 +35,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
 
     fileprivate mutating func sanitize() {
-        menuBarTemplate = menuBarTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? AppSettings.defaultTemplate
-            : AppSettings.clamped(menuBarTemplate)
+        menuBarTemplate = AppSettings.clamped(menuBarTemplate)
     }
 }
 

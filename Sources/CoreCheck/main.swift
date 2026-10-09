@@ -352,8 +352,7 @@ do {
     check.expectEqual(r("max}"), "max}", "an unmatched closing brace stays literal")
     check.expectEqual(r("{}"), "{}", "empty braces stay literal")
     check.expectEqual(r("{{max}}"), "{46}", "nested braces expand only the inner token")
-    check.expectEqual(r(""), "46\(degree) 3.2k", "an empty template falls back to the default")
-    check.expectEqual(r("   "), "46\(degree) 3.2k", "a blank template falls back to the default")
+    check.expectEqual(r(""), "", "an empty template renders no text")
 
     let none = MenuBarValues()
     check.expectEqual(MenuBarTemplate.render("{max}\(degree) {rpm}", none), "--\(degree) --", "missing readings render --")
@@ -400,7 +399,7 @@ do {
     check.expectEqual(SettingsStore(url: url).load().showPressureDot, true, "a missing key takes its default")
 
     try? Data(#"{"menuBarTemplate":"   "}"#.utf8).write(to: url)
-    check.expectEqual(SettingsStore(url: url).load().menuBarTemplate, AppSettings.defaultTemplate, "a blank template loads as the default")
+    check.expectEqual(SettingsStore(url: url).load().menuBarTemplate, "   ", "a blank template is kept as written")
 
     try? Data("{\"menuBarTemplate\":\"\(String(repeating: "a", count: 500))\"}".utf8).write(to: url)
     check.expectEqual(SettingsStore(url: url).load().menuBarTemplate.count, AppSettings.maxTemplateLength, "an oversized template is cut to the limit")
