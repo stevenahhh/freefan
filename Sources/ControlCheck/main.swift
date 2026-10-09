@@ -238,4 +238,34 @@ do {
     }
 }
 
+// 15. A battery curve follows the battery, stays guarded by the SoC, and never feeds the max input.
+do {
+    let warm = SensorReading(cpu: 55, gpu: 60, battery: 70, fans: [])
+    check.expectEqual(warm.input(.battery), Float?.some(70), "battery input is the battery mean")
+    check.expectEqual(warm.input(.max), Float?.some(60), "the battery never feeds the max input")
+    check.expectEqual(warm.controlInputs(for: .battery).temperature, Float?.some(70), "battery curve follows the battery")
+    check.expectEqual(warm.controlInputs(for: .battery).safety, Float?.some(60), "battery curve is guarded by the hottest die")
+
+    let noBattery = SensorReading(cpu: 55, gpu: 60, battery: nil, fans: [])
+    check.expectEqual(noBattery.controlInputs(for: .battery).temperature, Float?.none, "an unreadable battery is no temperature")
+
+    let c = FanController(fans: fans)
+    _ = check.expectNoThrow("battery curve accepted") { try c.setCurve(steep, input: .battery) }
+    let cool = warm.controlInputs(for: .battery)
+    let a = c.tick(temperature: cool.temperature, safetyTemperature: cool.safety, fans: obs(manual: false))
+    check.expectEqual(c.mode, .curve, "a cool SoC leaves the battery curve in charge")
+    for (i, fan) in fans.enumerated() {
+        check.expectEqual(a[i * 2], .setTarget(fan: fan.index, rpm: fan.rpm(percent: steep.percent(at: 70))), "fan \(fan.index) follows the battery temperature")
+    }
+
+    let hot = SensorReading(cpu: 50, gpu: 97, battery: 31, fans: []).controlInputs(for: .battery)
+    let h = FanController(fans: fans)
+    _ = check.expectNoThrow("battery curve accepted") { try h.setCurve(steep, input: .battery) }
+    let ha = h.tick(temperature: hot.temperature, safetyTemperature: hot.safety, fans: obs(manual: false))
+    check.expectEqual(h.mode, .panic, "a hot GPU panics a cool battery curve")
+    for fan in fans {
+        check.expect(ha.contains(.setTarget(fan: fan.index, rpm: fan.maxRPM)), "fan \(fan.index) runs at Mx while the die is hot")
+    }
+}
+
 exit(check.summary())

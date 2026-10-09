@@ -93,6 +93,24 @@ if let telemetry {
     report(gpuOK, "Telemetry.read GPU in 0...130 (gpu=\(describe(reading.gpu)))")
 }
 
+// MARK: - 4b. Battery sensors
+
+let batteryDirect = SensorCatalog.batteryKeys.compactMap { try? smc.readFloat($0) }
+report(batteryDirect.count == SensorCatalog.batteryKeys.count,
+       "every battery key \(SensorCatalog.batteryKeys) reads (\(batteryDirect.count) of \(SensorCatalog.batteryKeys.count))")
+if let telemetry {
+    let reading = telemetry.read()
+    let expected = SensorCatalog.batteryMean(batteryDirect)
+    var matches = false
+    if let battery = reading.battery, let expected { matches = abs(battery - expected) < 1.0 }
+    report(matches, "Telemetry.read battery is the mean of the direct sensor reads (battery=\(describe(reading.battery)), expected=\(describe(expected)))")
+    report(reading.input(.battery) == reading.battery, "SensorReading.input(.battery) returns the battery mean")
+}
+report(SensorCatalog.batteryMean([30, 32]) == 31, "battery mean of 30 and 32 is 31")
+report(SensorCatalog.batteryMean([30, .nan, 0, -4, 200, 32]) == 31, "battery mean ignores NaN, zero, negative and out-of-range sensors")
+report(SensorCatalog.batteryMean([]) == nil, "battery mean of no sensors is nil")
+report(SensorCatalog.batteryMean([0, .nan, .infinity]) == nil, "battery mean of only invalid sensors is nil")
+
 // MARK: - 5. Unprivileged write is refused
 
 if geteuid() != 0 {
