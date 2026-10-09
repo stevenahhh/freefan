@@ -39,13 +39,37 @@ public struct PresetLibrary: Codable, Equatable, Sendable {
 
     public var activePreset: Preset? { preset(id: active) }
 
-    // TODO(node-curve-presets): defaults() returns Auto active with these four presets:
-    //   Silent      id "silent"       input max  50:0, 70:15, 85:45, 95:100
-    //   Balanced    id "balanced"     input max  45:5, 60:20, 75:45, 90:80, 95:100
-    //   Performance id "performance"  input max  40:20, 55:40, 70:70, 85:100
-    //   Full        id "full"         input max  30:100, 100:100
+    /// Auto active, version 1, with the four built-in presets.
     public static func defaults() -> PresetLibrary {
-        PresetLibrary(presets: [])
+        PresetLibrary(
+            version: currentVersion,
+            active: autoID,
+            presets: [
+                Preset(id: "silent", name: "Silent", input: FanControlInput.max, points: [
+                    CurvePoint(t: 50, p: 0),
+                    CurvePoint(t: 70, p: 15),
+                    CurvePoint(t: 85, p: 45),
+                    CurvePoint(t: 95, p: 100),
+                ]),
+                Preset(id: "balanced", name: "Balanced", input: FanControlInput.max, points: [
+                    CurvePoint(t: 45, p: 5),
+                    CurvePoint(t: 60, p: 20),
+                    CurvePoint(t: 75, p: 45),
+                    CurvePoint(t: 90, p: 80),
+                    CurvePoint(t: 95, p: 100),
+                ]),
+                Preset(id: "performance", name: "Performance", input: FanControlInput.max, points: [
+                    CurvePoint(t: 40, p: 20),
+                    CurvePoint(t: 55, p: 40),
+                    CurvePoint(t: 70, p: 70),
+                    CurvePoint(t: 85, p: 100),
+                ]),
+                Preset(id: "full", name: "Full", input: FanControlInput.max, points: [
+                    CurvePoint(t: 30, p: 100),
+                    CurvePoint(t: 100, p: 100),
+                ]),
+            ]
+        )
     }
 }
 
@@ -66,25 +90,73 @@ public final class PresetStore {
         self.library = PresetLibrary.defaults()
     }
 
-    // TODO(node-curve-presets): load() reads the file; when it is missing, write defaults(); when it is
-    // unreadable or not decodable, move it aside to presets.json.bak and fall back to defaults; drop
-    // presets whose curve fails validate(). save() writes atomically (create the parent directory first).
-    // setActive/upsert/remove mutate then save. Keep the file human-readable (sorted keys, indented).
+    // load() reads the file; when it is missing, write defaults(); when it is unreadable or not decodable,
+    // move it aside to <url>.bak and fall back to defaults; drop presets whose curve fails validate().
+    // save() writes atomically (creating the parent directory first), sorted keys, indented.
+    // setActive/upsert/remove mutate then save.
 
     @discardableResult
     public func load() throws -> PresetLibrary {
-        library
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: url.path) {
+            library = PresetLibrary.defaults()
+            try save()
+            return library
+        }
+
+        let decoded: PresetLibrary
+        do {
+            let data = try Data(contentsOf: url)
+            decoded = try JSONDecoder().decode(PresetLibrary.self, from: data)
+        } catch {
+            let backup = URL(fileURLWithPath: url.path + ".bak")
+            try? fileManager.removeItem(at: backup)
+            try? fileManager.moveItem(at: url, to: backup)
+            library = PresetLibrary.defaults()
+            try save()
+            return library
+        }
+
+        var sanitized = decoded
+        sanitized.presets = decoded.presets.filter { (try? $0.curve.validate()) != nil }
+        if sanitized.active != PresetLibrary.autoID && sanitized.preset(id: sanitized.active) == nil {
+            sanitized.active = PresetLibrary.autoID
+        }
+        library = sanitized
+        if sanitized != decoded {
+            try save()
+        }
+        return library
     }
 
     public func save() throws {
+        let directory = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(library)
+        try data.write(to: url, options: [.atomic])
     }
 
     public func setActive(_ id: String) throws {
+        library.active = id
+        try save()
     }
 
     public func upsert(_ preset: Preset) throws {
+        if let index = library.presets.firstIndex(where: { $0.id == preset.id }) {
+            library.presets[index] = preset
+        } else {
+            library.presets.append(preset)
+        }
+        try save()
     }
 
     public func remove(id: String) throws {
+        library.presets.removeAll { $0.id == id }
+        if library.active == id {
+            library.active = PresetLibrary.autoID
+        }
+        try save()
     }
 }

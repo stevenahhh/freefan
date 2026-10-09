@@ -45,16 +45,49 @@ public struct FanCurve: Codable, Equatable, Sendable {
         self.points = points
     }
 
-    // TODO(node-curve-presets): implement validate() and percent(at:).
-    // validate(): 2...12 points, finite values, t strictly increasing inside 0...130, p inside 0...100 and
-    // non-decreasing (a hotter input must never lower the fan). percent(at:): clamp below the first and
-    // above the last point, linear interpolation between neighbouring points.
-
+    /// Throws the first CurveError found. Order: point count, then per point the temperature range,
+    /// the percent range, and finally the monotonicity of temperature and percent.
     public func validate() throws {
-        throw CurveError.tooFewPoints(points.count)
+        let count = points.count
+        if count < FanCurve.minPoints { throw CurveError.tooFewPoints(count) }
+        if count > FanCurve.maxPoints { throw CurveError.tooManyPoints(count) }
+        for (index, point) in points.enumerated() {
+            guard point.t.isFinite,
+                  point.t >= FanCurve.minTemperature,
+                  point.t <= FanCurve.maxTemperature else {
+                throw CurveError.temperatureOutOfRange(index: index)
+            }
+            guard point.p.isFinite, point.p >= 0, point.p <= 100 else {
+                throw CurveError.percentOutOfRange(index: index)
+            }
+            if index > 0 {
+                if point.t <= points[index - 1].t {
+                    throw CurveError.notStrictlyIncreasing(index: index)
+                }
+                if point.p < points[index - 1].p {
+                    throw CurveError.decreasingPercent(index: index)
+                }
+            }
+        }
     }
 
+    /// Piecewise-linear lookup: clamps below the first and above the last point, interpolates between
+    /// neighbouring points otherwise.
     public func percent(at temperature: Double) -> Double {
-        0
+        guard let first = points.first else { return 0 }
+        if temperature <= first.t { return first.p }
+        guard let last = points.last else { return first.p }
+        if temperature >= last.t { return last.p }
+        for index in 0..<(points.count - 1) {
+            let lower = points[index]
+            let upper = points[index + 1]
+            if temperature >= lower.t && temperature <= upper.t {
+                let span = upper.t - lower.t
+                if span <= 0 { return upper.p }
+                let fraction = (temperature - lower.t) / span
+                return lower.p + (upper.p - lower.p) * fraction
+            }
+        }
+        return last.p
     }
 }
