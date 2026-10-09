@@ -4,6 +4,7 @@ import FreeFanSMC
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let store = PresetStore()
+    private let settingsStore = SettingsStore()
     private let helper = HelperClient()
     private let installer = HelperInstaller()
 
@@ -28,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = try? store.load()
+        settingsStore.load()
         installEditMenu()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -113,17 +115,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         latestFans = fans
         latestPressure = pressure
 
-        let title = Self.title(for: reading)
-        let appearance = statusItem.button?.effectiveAppearance.name
-        if title != lastTitle || pressure != shownPressure || appearance != shownAppearance {
-            lastTitle = title
-            shownPressure = pressure
-            shownAppearance = appearance
-            applyStatusContent(title: title, pressure: pressure)
-            statusItem.button?.toolTip = pressure.map { "Memory pressure: \($0.label)" }
-        }
-
+        refreshStatusItem()
         popoverController?.update(snapshot())
+    }
+
+    /// Recomputes the title and the dot from the latest readings and the settings, and touches the button only when
+    /// something it shows has changed.
+    private func refreshStatusItem() {
+        let settings = settingsStore.settings
+        let values = MenuBarValues(reading: latestReading, presetName: store.library.activePreset?.name ?? "Auto")
+        let title = latestReading == nil ? "--" : MenuBarTemplate.render(settings.menuBarTemplate, values)
+        let dot = settings.showPressureDot ? latestPressure : nil
+        let appearance = statusItem.button?.effectiveAppearance.name
+        guard title != lastTitle || dot != shownPressure || appearance != shownAppearance else { return }
+        lastTitle = title
+        shownPressure = dot
+        shownAppearance = appearance
+        applyStatusContent(title: title, pressure: dot)
+        statusItem.button?.toolTip = dot.map { "Memory pressure: \($0.label)" }
     }
 
     private func snapshot() -> LiveSnapshot {
@@ -144,9 +153,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             return
         }
         guard let button = statusItem.button else { return }
-        let controller = PopoverViewController(store: store, actions: popoverActions())
+        let controller = PopoverViewController(store: store, settings: settingsStore, actions: popoverActions())
         popoverController = controller
         let popover = NSPopover()
+        controller.onPreferredSizeChange = { [weak popover] size in popover?.contentSize = size }
         popover.behavior = .transient
         popover.delegate = self
         popover.contentViewController = controller
@@ -167,7 +177,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func popoverActions() -> PopoverActions {
         PopoverActions(
-            presetsChanged: { [weak self] in self?.applyActivePreset() },
+            presetsChanged: { [weak self] in
+                self?.applyActivePreset()
+                self?.refreshStatusItem()
+            },
+            settingsChanged: { [weak self] in self?.refreshStatusItem() },
             installHelper: { [weak self] in self?.runHelperAction(install: true) },
             uninstallHelper: { [weak self] in self?.runHelperAction(install: false) },
             quit: { [weak self] in self?.quit() }
@@ -245,22 +259,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private static func menuBarTextColor(for appearance: NSAppearance) -> NSColor {
         let match = appearance.bestMatch(from: [.darkAqua, .vibrantDark, .aqua, .vibrantLight])
         return match == .darkAqua || match == .vibrantDark ? .white : .black
-    }
-
-    private static func title(for reading: SensorReading?) -> String {
-        guard let reading else { return "--" }
-        let temperature: String
-        if let value = reading.input(.max) {
-            temperature = "\(Int(value.rounded()))\u{00B0}"
-        } else {
-            temperature = "--"
-        }
-        let rpm: String
-        if let peak = reading.fans.compactMap({ $0.rpm }).max() {
-            rpm = peak >= 1000 ? String(format: "%.1fk", Double(peak) / 1000) : "\(Int(peak.rounded()))"
-        } else {
-            rpm = "--"
-        }
-        return "\(temperature) \(rpm)"
     }
 }
