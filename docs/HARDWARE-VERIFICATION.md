@@ -7,9 +7,9 @@ Reproduce with:
 
 ```sh
 swift build --scratch-path build/scratch
-swift run --scratch-path build/scratch SMCCheck     # 35 checks
-swift run --scratch-path build/scratch CoreCheck    # 154 checks
-swift run --scratch-path build/scratch ControlCheck # 70 checks
+swift run --scratch-path build/scratch SMCCheck     # 42 checks
+swift run --scratch-path build/scratch CoreCheck    # 215 checks
+swift run --scratch-path build/scratch ControlCheck # 132 checks
 bash scripts/build-app.sh && codesign --verify --strict build/FreeFan.app
 ```
 
@@ -39,7 +39,7 @@ restored `md=0` within one tick.
 
 ## C3 - curve editor and persistence
 
-The editor window draws the selected preset's curve (grid, both axes titled, the Silent preset's
+The curve editor now lives in the popover (there is no separate window). It draws the selected preset's curve (grid, both axes titled, the Silent preset's
 points 50:0 / 70:15 / 85:45 / 95:100, a translucent fill) and overlays a live marker: a dashed line at
 the current temperature with `53.4 °C 2501 / 7826 rpm` - the fan RPM matched the probe's 2498-2509 at
 that moment.
@@ -93,9 +93,44 @@ speak to it; the socket itself is mode 0666 and `getpeereid` is the gate.
 | FreeFan (menu bar app, idle) | 0.0 % | phys_footprint 14 MB |
 | FreeFanHelper (idle, Auto) | 0.0 % | ~2.4 MB resident |
 
+Remeasured with the popover build installed in `/Applications`, from the cumulative CPU time:
+
+| process | state | CPU | memory |
+|---|---|---|---|
+| FreeFan | popover closed, Performance curve applied, 180 s | 0.14 % | phys_footprint 17 MB |
+| FreeFanHelper | controlling (1 s tick), 180 s | 0.11 % | 6.9 MB resident |
+| FreeFanHelper | idle in Auto (no client), 120 s | 0.000 % | 6.2 MB resident |
+
+The helper is at its 0.1 % budget only while it controls the fans; idle it uses no CPU at all. kill -9
+of the app returned `md=0` in 10 ms and SIGTERM of the helper in 19 ms (independent probe), after
+which launchd restarted the helper and the app took control again.
+
 Budgets were 0.5 % / 50 MB for the app and 0.1 % / 10 MB for the daemon. The daemon holds no timer
 while idle - it blocks on the socket - and the app reads the SMC on a utility queue and rewrites the
 status title only when the rendered string changes.
+
+## C6 - battery input
+
+With the helper reinstalled from the current bundle, `CURVE battery 20:10,40:30` was held on one
+connection. The helper reported `temp=32.23` while the independent probe read TB0T / TB1T / TB2T =
+32.40 / 31.90 / 32.40 °C (mean 32.23); the worst difference over the settled samples was 0.03 °C. At
+32.23 °C the curve gives 22.23 %, i.e. 2317 + 0.2223 × 5509 = 3541.8 rpm; the SMC targets read 3541 and
+the fans settled within 7 rpm of it. `AUTO` returned both targets to the system. The 95 °C guard
+watches the hottest CPU/GPU sensor whatever the curve input is, so a cool battery curve cannot hide a
+hot SoC (ControlCheck). `CURVE battery nan:1,50:2` and `CURVE batt 20:0,40:100` were refused with no
+SMC write.
+
+## C7 - popover, menu bar text and memory pressure
+
+- Dragging a point in the popover editor rewrote `presets.json`; chips switched presets (helper
+  `mode=curve`) and Auto (`md=0`); points clamp to 0-110 °C / 0-100 %; Escape during a drag wrote
+  nothing.
+- Typing `CPU {cpu}° · {rpm}` in the settings page and pressing Return changed the menu bar to
+  `CPU 40° · 2.3k`; the text survived a relaunch. A corrupt `settings.json` was moved to
+  `settings.json.bak` and the default `38° 2.3k` shown. The pressure dot can be switched off and on.
+- The memory pressure dot is green at level 1 (Normal), like Activity Monitor.
+- Popover memory: about 26 MB closed, 28-30 MB open, back to 26 MB after 30 open/close cycles. kill -9
+  of the app while a curve was applied returned `md=0` in 144 ms.
 
 ## Not covered
 

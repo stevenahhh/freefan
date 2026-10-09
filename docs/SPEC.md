@@ -51,11 +51,11 @@ M5 Pro에서도 팬 제어가 가능하다. 이 맥에서 root 권한으로 직�
 결정: 레거시 LaunchDaemon과 Unix 도메인 소켓을 쓰고, `getpeereid`로 uid를 검사한다.
 
 - SMAppService.daemon은 쓰지 않는다. macOS 27 SDK `SMAppService.h`에 "Apps that contain LaunchDaemons must be notarized"라고 적혀 있다. 같은 헤더에 레거시 `/Library/LaunchDaemons`는 승인 없이 부팅된다는 문구도 있다 [A4]. 2026년 포럼에는 공증 없는 SMAppService 데몬이 AMFI -413으로 막혔다는 보고가 있고 [Source 43], macOS 27에서 일반 LaunchDaemon이 동작했다는 보고도 있다 [Source 44].
-- 설치: 앱 메뉴의 "Install Helper…"를 누르면 `osascript … with administrator privileges`로 관리자 암호를 한 번 묻는다. 헬퍼 바이너리는 `/Library/PrivilegedHelperTools/com.stevenahhh.freefan.helper`(root:wheel 0755), plist는 `/Library/LaunchDaemons/com.stevenahhh.freefan.helper.plist`(root:wheel 0644)에 놓고 `launchctl bootstrap system`으로 로드한다. 제거할 때는 `launchctl bootout system/com.stevenahhh.freefan.helper` 후 두 파일을 지운다 [A4][Source 39].
+- 설치: 팝오버 아래쪽의 "Install Helper…"를 누르면 `osascript … with administrator privileges`로 관리자 암호를 한 번 묻는다. 헬퍼 바이너리는 `/Library/PrivilegedHelperTools/com.stevenahhh.freefan.helper`(root:wheel 0755), plist는 `/Library/LaunchDaemons/com.stevenahhh.freefan.helper.plist`(root:wheel 0644)에 놓고 `launchctl bootstrap system`으로 로드한다. 제거할 때는 `launchctl bootout system/com.stevenahhh.freefan.helper` 후 두 파일을 지운다 [A4][Source 39].
 - 서명: 모든 바이너리는 ad-hoc(`codesign -s -`)으로 서명한다. 서명이 없으면 이 맥에서 실행 즉시 SIGKILL로 종료된다 [A4].
 - IPC: 헬퍼가 `/var/run/com.stevenahhh.freefan.sock`을 만들고 권한을 0666으로 둔다. 대신 연결마다 `getpeereid`로 uid가 {0, 설치 사용자} 중 하나인지 확인하고, 그렇지 않으면 연결을 즉시 끊는다 [Source 32][Source 33][Source 46].
   - XPC 코드 서명 요구사항을 쓸 수도 있다. 하지만 ad-hoc 코드로는 빌드마다 바뀌는 cdhash나 위조할 수 있는 identifier만 지정할 수 있다 [Source 45][A2]. 자체 서명한 인증서로 안정적인 요구사항을 만들 수 있다는 것도 확인했다 [A4]. 다만 그러려면 키체인에 인증서를 따로 만들어야 한다. uid 검사는 서명 인프라 없이도 같은 수준의 경계를 제공한다. 같은 uid의 프로세스는 어차피 앱 자체를 조작할 수 있다. 게다가 헬퍼는 팬을 [Mn, Mx] 범위 밖으로 설정하지 않으므로, 오용되어도 최악의 경우 소음이 커지는 정도다.
-- 프로토콜: 한 줄에 명령 하나를 보내는 텍스트 방식이다. `PING`, `STATUS`, `AUTO`, `CURVE <input> <hold> t:p,…`, `FIXED <percent>`. NaN이나 범위 밖 숫자는 거부한다. 점은 2~12개여야 하고(ASSUMED: 편집기 조작성을 기준으로 함), 온도는 순증가(strictly increasing)해야 한다.
+- 프로토콜: 한 줄에 명령 하나를 보내는 텍스트 방식이다. `PING`, `STATUS`, `AUTO`, `CURVE <max|cpu|gpu|battery> t:p,…`, `FIXED <percent>`. `battery`는 TB0T/TB1T/TB2T 중 유효한 센서의 평균이다. NaN이나 범위 밖 숫자는 거부한다. 점은 2~12개여야 하고(ASSUMED: 편집기 조작성을 기준으로 함), 온도는 순증가(strictly increasing)해야 한다.
 
 ## 4. 제어 루프와 안전장치
 
@@ -66,7 +66,7 @@ M5 Pro에서도 팬 제어가 가능하다. 이 맥에서 root 권한으로 직�
 | 입력 | 프리셋마다 `cpu`/`gpu`/`max` 중 하나를 고르며, 기본값은 `max`다 | [A5] 클래스별 최댓값 |
 | 히스테리시스(하강) | 2°C | fand의 하강 폭은 3.0°C, fanpro는 2°C [Source 7][A5] |
 | 쓰기 dead band | 목표 RPM이 100rpm 이상 바뀔 때만 `Tg`를 쓴다 | fanctl 150rpm [Source 8], 쓰기 한도 [Source 12] |
-| 과열 | 입력이 95°C 이상이면 팬을 Mx로 설정하고, 88°C 미만으로 내려오면 해제한다 | fand >95°C [Source 7], fanctl ≥95°C [Source 8] |
+| 과열 | 커브 입력과 상관없이 CPU/GPU 중 가장 뜨거운 값이 95°C 이상이면 팬을 Mx로 설정하고, 88°C 미만으로 내려오면 해제한다 | fand >95°C [Source 7], fanctl ≥95°C [Source 8] |
 | 회수 대응 | 틱마다 `F{n}md`를 읽어 1이 아니면 `Tg`를 먼저 쓰고 `md=1`을 다시 쓴다 | [Source 17][Source 56] |
 | 리스 | 앱은 소켓 연결을 유지하고 4초마다 PING을 보낸다. 연결이 끊기거나 12초 동안 신호가 없으면 auto로 전환한다 | fanfan 10초 리스 [Source 35], 9fan 6초 [Source 32] |
 | 종료 | SIGTERM/SIGINT/SIGHUP을 받으면 모든 팬을 `md=0`으로 설정한 뒤 종료한다 | [Source 7][A2] |
@@ -77,10 +77,10 @@ M5 Pro에서도 팬 제어가 가능하다. 이 맥에서 root 권한으로 직�
 
 ## 5. UI와 오버헤드
 
-- AppKit `NSStatusItem`과 `NSMenu`를 쓰고 SwiftUI MenuBarExtra는 쓰지 않는다. 측정상 메모리는 AppKit이 13MB, MenuBarExtra가 17~21MB였고, 갱신 스파이크도 AppKit 쪽이 작았다 [A6]. MenuBarExtra는 라벨이 템플릿 이미지로만 그려지고 생명주기 버그도 있다 [Source 26].
-- 메뉴바 제목은 `52° 2.3k`처럼 짧게 표시하고, **문자열이 바뀔 때만** 새로 설정한다. 매 틱 설정하면 0.2~3.9%, 바뀔 때만 설정하면 0.0%였다 [A6][Source 22][Source 23].
-- 계속 살아 있는 `DispatchSourceTimer` 하나를 쓴다. 메뉴와 편집기가 닫혀 있으면 3초, 열려 있으면 1초 주기로 돈다. leeway는 주기의 20%로 설정해 Apple 권장치(10% 이상)를 지킨다 [Source 20]. 같은 상태 데이터를 다시 그리지 않는다.
-- 커브 편집기는 Core Graphics로 직접 그리는 `NSView`이고, 창을 열 때만 만든다. 창을 닫으면 해제한다. 생성과 해제를 30초 동안 반복해도 메모리가 늘지 않았다(MEASURED) [A6]. Swift Charts는 쓰지 않는다(시리즈 하나에 34~90MB) [A6].
+- AppKit `NSStatusItem`과 `NSPopover`를 쓰고 SwiftUI MenuBarExtra는 쓰지 않는다. 팝오버 하나에 실시간 값, 프리셋 칩, 커브 편집기, 메뉴바 텍스트 설정 페이지가 모두 들어 있고 별도 창은 없다. 측정상 메모리는 AppKit이 13MB, MenuBarExtra가 17~21MB였고, 갱신 스파이크도 AppKit 쪽이 작았다 [A6]. MenuBarExtra는 라벨이 템플릿 이미지로만 그려지고 생명주기 버그도 있다 [Source 26].
+- 메뉴바 제목은 기본값 `{max}° {rpm}` 템플릿(`52° 2.3k`)으로 짧게 표시하고 사용자가 `{cpu}` `{gpu}` `{bat}` `{rpm0}` `{rpm1}` `{preset}`로 바꿀 수 있다(40자 제한, `settings.json`). 앞에 Activity Monitor와 같은 기준(`kern.memorystatus_vm_pressure_level` 1/2/4 → 초록/노랑/빨강)의 메모리 압력 점을 둘 수 있다. 제목과 점은 **문자열이 바뀔 때만** 새로 설정한다. 매 틱 설정하면 0.2~3.9%, 바뀔 때만 설정하면 0.0%였다 [A6][Source 22][Source 23].
+- 계속 살아 있는 `DispatchSourceTimer` 하나를 쓴다. 팝오버가 닫혀 있으면 3초, 열려 있으면 1초 주기로 돈다. leeway는 주기의 20%로 설정해 Apple 권장치(10% 이상)를 지킨다 [Source 20]. 같은 상태 데이터를 다시 그리지 않는다.
+- 커브 편집기는 Core Graphics로 직접 그리는 `NSView`이고, 팝오버를 열 때만 만들고 닫으면 해제한다. 매초 바뀌는 실시간 표시(점선, 점, 라벨)는 다시 그리지 않고 `CALayer` 속성만 바꾼다. 매초 `draw(_:)`로 다시 그리면 그래픽 백킹 스토어가 약 70MB 남았고, 레이어로 바꾼 뒤 열린 상태 28MB, 30번 열고 닫은 뒤 26MB였다(MEASURED). Swift Charts는 쓰지 않는다(시리즈 하나에 34~90MB) [A6].
 - SMC 연결은 하나만 열어 두고, 키 정보는 처음 한 번만 캐시한다 [Source 25][A6].
 - 읽기 작업은 `.utility` QoS로 실행하고 프로세스 assertion은 잡지 않는다. App Nap도 막지 않는다 [Source 28].
 - 빌드 플래그는 `-O -wmo`와 `-dead_strip`이다. 바이너리 크기가 약 34% 줄어든다(MEASURED) [A6].
@@ -91,7 +91,7 @@ M5 Pro에서도 팬 제어가 가능하다. 이 맥에서 root 권한으로 직�
 - 커브는 구간별 선형(piecewise linear)이다. 점은 2~12개이고, x는 순증가, y는 감소하지 않는다. 첫 점보다 낮은 온도에는 첫 점의 값을, 마지막 점보다 높은 온도에는 마지막 점의 값을 쓴다 [Source 49][A7].
 - y축은 `[Mn, Mx]`에 대한 퍼센트다. `rpm = Mn + p/100 × (Mx − Mn)`이고, Mac17,9에서는 `2317 + p × 55.09`다 [A7].
 - 편집기 조작: 점을 끌어 옮기고, 빈 곳을 더블클릭하면 점을 추가하고, 점을 우클릭하면 삭제한다. 끌어 옮기는 동안 1°C/1% 단위로 스냅된다. 그래프 위에 현재 온도와 RPM이 점으로 표시된다 [Source 49][Source 50].
-- 저장: `~/Library/Application Support/FreeFan/presets.json`에 `{ "version": 1, "active": "<id>", "presets": [ { "id", "name", "input": "max|cpu|gpu", "points": [[t, p], …] } ] }` 형태로 쓴다. "Auto"는 프리셋이 아니라 별도 모드이고, `md=0`이다 [A7 수정본].
+- 저장: `~/Library/Application Support/FreeFan/presets.json`에 `{ "version": 1, "active": "<id>", "presets": [ { "id", "name", "input": "max|cpu|gpu|battery", "points": [[t, p], …] } ] }` 형태로 쓴다. "Auto"는 프리셋이 아니라 별도 모드이고, `md=0`이다 [A7 수정본].
 - 기본 프리셋(ASSUMED, A7 초안을 이 맥의 측정값에 맞게 조정함. 유휴 시 CPU는 약 50°C [V5]):
 
 | 이름 | 점 (°C:%) |
