@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var currentInterval: TimeInterval = 0
     private var shownPressure: MemoryPressure?
     private var dotImages: [MemoryPressure: NSImage] = [:]
+    private var shownAppearance: NSAppearance.Name?
 
     private var editor: CurveEditorWindowController?
 
@@ -94,14 +95,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         latestFans = fans
 
         let title = Self.title(for: reading)
-        if title != lastTitle {
+        let appearance = statusItem.button?.effectiveAppearance.name
+        if title != lastTitle || pressure != shownPressure || appearance != shownAppearance {
             lastTitle = title
-            statusItem.button?.title = title
-        }
-
-        if pressure != shownPressure {
             shownPressure = pressure
-            statusItem.button?.image = pressure.map { dotImage(for: $0) }
+            shownAppearance = appearance
+            applyStatusContent(title: title, pressure: pressure)
             statusItem.button?.toolTip = pressure.map { "Memory pressure: \($0.label)" }
         }
 
@@ -126,15 +125,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return latestFans.first { $0.index == fan.index }?.maxRPM
     }
 
-    /// The same three colors Activity Monitor uses for its Memory Pressure graph. Images are built once per level.
+    /// Fixed sRGB colors: dynamic system colors resolve to monochrome in the menu bar's vibrant appearance.
+    private static func dotColor(for level: MemoryPressure) -> NSColor {
+        switch level {
+        case .normal: return NSColor(srgbRed: 0.204, green: 0.78, blue: 0.349, alpha: 1)
+        case .warning: return NSColor(srgbRed: 1, green: 0.8, blue: 0, alpha: 1)
+        case .critical: return NSColor(srgbRed: 1, green: 0.231, blue: 0.188, alpha: 1)
+        }
+    }
+
     private func dotImage(for level: MemoryPressure) -> NSImage {
         if let cached = dotImages[level] { return cached }
-        let color: NSColor
-        switch level {
-        case .normal: color = .systemGreen
-        case .warning: color = .systemYellow
-        case .critical: color = .systemRed
-        }
+        let color = Self.dotColor(for: level)
         let image = NSImage(size: NSSize(width: 9, height: 9), flipped: false) { rect in
             color.setFill()
             NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
@@ -143,6 +145,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         image.isTemplate = false
         dotImages[level] = image
         return image
+    }
+
+    private func applyStatusContent(title: String, pressure: MemoryPressure?) {
+        guard let button = statusItem.button else { return }
+        guard let pressure else {
+            button.image = nil
+            button.title = title
+            return
+        }
+        button.image = dotImage(for: pressure)
+        button.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular),
+            .foregroundColor: Self.menuBarTextColor(for: button.effectiveAppearance),
+        ])
+    }
+
+    /// A button holding a full-color image is drawn without the menu bar's vibrancy, so its text needs an explicit
+    /// color that follows the bar's light or dark appearance.
+    private static func menuBarTextColor(for appearance: NSAppearance) -> NSColor {
+        let match = appearance.bestMatch(from: [.darkAqua, .vibrantDark, .aqua, .vibrantLight])
+        return match == .darkAqua || match == .vibrantDark ? .white : .black
     }
 
     private static func title(for reading: SensorReading?) -> String {
