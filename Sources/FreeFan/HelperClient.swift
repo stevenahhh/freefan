@@ -14,6 +14,7 @@ final class HelperClient {
     private var connectedFlag = false
     private var controllingFlag = false
     private var lastStatusValue: HelperStatus?
+    private var lastErrorValue: String?
 
     private var descriptor: Int32 = -1
     private var desiredPreset: Preset?
@@ -47,6 +48,11 @@ final class HelperClient {
         return lastStatusValue
     }
 
+    var lastError: String? {
+        lock.lock(); defer { lock.unlock() }
+        return lastErrorValue
+    }
+
     func connect() {
         queue.async { [self] in _ = openIfNeeded() }
     }
@@ -72,7 +78,7 @@ final class HelperClient {
             desiredPreset = preset
             setControlling(true)
             guard openIfNeeded() else { return }
-            _ = transact(HelperCommand.curve(input: preset.input, points: preset.points).serialized)
+            recordReply(transact(HelperCommand.curve(input: preset.input, points: preset.points).serialized))
         }
     }
 
@@ -81,7 +87,7 @@ final class HelperClient {
             desiredPreset = nil
             setControlling(false)
             guard openIfNeeded() else { return }
-            _ = transact(HelperCommand.auto.serialized)
+            recordReply(transact(HelperCommand.auto.serialized))
         }
     }
 
@@ -126,7 +132,7 @@ final class HelperClient {
         nextAttempt = .distantPast
         setConnected(true)
         if let preset = desiredPreset {
-            _ = transact(HelperCommand.curve(input: preset.input, points: preset.points).serialized)
+            recordReply(transact(HelperCommand.curve(input: preset.input, points: preset.points).serialized))
         }
         return true
     }
@@ -229,6 +235,12 @@ final class HelperClient {
 
     private func setControlling(_ value: Bool) {
         lock.lock(); controllingFlag = value; lock.unlock()
+    }
+
+    private func recordReply(_ reply: String?) {
+        guard let reply else { return }
+        let error = reply.hasPrefix("ERR") ? String(reply.dropFirst(3)).trimmingCharacters(in: .whitespaces) : nil
+        lock.lock(); lastErrorValue = error; lock.unlock()
     }
 
     private func setLastStatus(_ status: HelperStatus?) {
