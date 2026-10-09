@@ -137,7 +137,14 @@ public final class FanController {
             if panicked {
                 target = fan.maxRPM
             } else if let curve {
-                target = fan.rpm(percent: curve.percent(at: Double(usedTemperature ?? t)))
+                let percent = curve.percent(at: Double(usedTemperature ?? t))
+                // Zero fan: a curve at 0 % hands the fan back to macOS, which keeps it stopped while the Mac is
+                // cool. No target below Mn is ever written; leaving the zone re-engages target-first below.
+                if percent <= 0 {
+                    if observation.manual { actions.append(.setManual(fan: fan.index, on: false)) }
+                    continue
+                }
+                target = fan.rpm(percent: percent)
             } else if let fixedPercent {
                 target = fan.rpm(percent: fixedPercent)
             } else {
