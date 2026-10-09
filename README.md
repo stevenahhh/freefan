@@ -24,6 +24,8 @@ The app shows `52° 2.3k` in the menu bar. Clicking it opens a popover with live
 fan readings, the memory pressure, a chip per preset and the curve editor. Clicking a chip activates
 that preset and shows its curve; every edit is saved when you let go of the mouse and sent to the
 daemon right away. **Auto** returns the fans to the system. "Auto" is a mode, not a preset.
+A curve follows the hottest of CPU and GPU, the CPU, the GPU or the battery average (the pop-up menu
+next to the name); whatever it follows, the fans go to full speed when the CPU or GPU reaches 95 °C.
 
 **Menu Bar Text…** in the popover footer opens the settings page. The text is a template; click a name
 to insert it, and the preview shows what the menu bar will say. The names are `{max}` (hottest of CPU
