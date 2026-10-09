@@ -335,4 +335,78 @@ check.expectEqual(MemoryPressure.allCases.count, 3, "exactly three pressure stat
 check.expect(MemoryPressure.read() != nil, "kern.memorystatus_vm_pressure_level is readable on this machine")
 print("[CoreCheck]     live pressure level: \(MemoryPressure.read().map { String($0.rawValue) } ?? "nil")")
 
+// MARK: - Menu bar template
+
+do {
+    let v = MenuBarValues(max: 46.2, cpu: 45.9, gpu: 43.1, battery: 31.0, fanRPMs: [3166, 3168], presetName: "Performance")
+    func r(_ template: String) -> String { MenuBarTemplate.render(template, v) }
+    let degree = "\u{00B0}"
+    check.expectEqual(r("{max}\(degree) {rpm}"), "46\(degree) 3.2k", "default template shows the hottest die and the peak rpm")
+    check.expectEqual(r("CPU {cpu}\(degree) \u{00B7} {rpm}"), "CPU 46\(degree) \u{00B7} 3.2k", "literal text around tokens is kept")
+    check.expectEqual(r("{cpu}/{gpu}/{bat}"), "46/43/31", "cpu, gpu and battery tokens")
+    check.expectEqual(r("{rpm0} {rpm1} {rpm}"), "3.2k 3.2k 3.2k", "per-fan and peak rpm tokens")
+    check.expectEqual(r("{preset}"), "Performance", "preset token")
+    check.expectEqual(r("{foo}"), "{foo}", "an unknown token stays literal")
+    check.expectEqual(r("{rpm2}"), "{rpm2}", "a fan token outside the list stays literal")
+    check.expectEqual(r("{max"), "{max", "an unmatched opening brace stays literal")
+    check.expectEqual(r("max}"), "max}", "an unmatched closing brace stays literal")
+    check.expectEqual(r("{}"), "{}", "empty braces stay literal")
+    check.expectEqual(r("{{max}}"), "{46}", "nested braces expand only the inner token")
+    check.expectEqual(r(""), "46\(degree) 3.2k", "an empty template falls back to the default")
+    check.expectEqual(r("   "), "46\(degree) 3.2k", "a blank template falls back to the default")
+
+    let none = MenuBarValues()
+    check.expectEqual(MenuBarTemplate.render("{max}\(degree) {rpm}", none), "--\(degree) --", "missing readings render --")
+    check.expectEqual(MenuBarTemplate.render("{preset}", none), "--", "a missing preset renders --")
+    check.expectEqual(MenuBarTemplate.render("{rpm1}", MenuBarValues(fanRPMs: [2500])), "--", "a fan that does not exist renders --")
+    check.expectEqual(MenuBarTemplate.render("{rpm}", MenuBarValues(fanRPMs: [nil, 2400])), "2.4k", "the peak ignores a fan without a reading")
+    check.expectEqual(MenuBarTemplate.render("{rpm}", MenuBarValues(fanRPMs: [950])), "950", "rpm below 1000 prints whole")
+    check.expectEqual(MenuBarTemplate.render("{rpm}", MenuBarValues(fanRPMs: [7826])), "7.8k", "rpm from 1000 prints in thousands")
+    check.expectEqual(MenuBarTemplate.render("{max}", MenuBarValues(max: .nan)), "--", "NaN renders --")
+    check.expectEqual(MenuBarTemplate.render("{max}", MenuBarValues(max: .infinity)), "--", "infinity renders --")
+    check.expectEqual(MenuBarTemplate.render("{rpm}", MenuBarValues(fanRPMs: [-5])), "--", "a negative rpm renders --")
+    check.expectEqual(MenuBarTemplate.render("{preset}", MenuBarValues(max: 46, presetName: "{max}")), "{max}", "substituted values are not expanded again")
+
+    check.expectEqual(r(String(repeating: "x", count: 100)).count, MenuBarTemplate.maxRenderedLength, "output is capped")
+    let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
+    check.expectEqual(r(String(repeating: family, count: 50)), String(repeating: family, count: MenuBarTemplate.maxRenderedLength), "the cap never splits an emoji family")
+    check.expectEqual(r(String(repeating: "\u{C628}\u{B3C4}", count: 30)).count, MenuBarTemplate.maxRenderedLength, "CJK text is capped by characters")
+}
+
+// MARK: - Settings store
+
+do {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("freefan-settings-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let url = root.appendingPathComponent("settings.json")
+
+    let store = SettingsStore(url: url)
+    check.expectEqual(store.load(), AppSettings(), "a missing file loads the defaults")
+    check.expect(!FileManager.default.fileExists(atPath: url.path), "loading the defaults does not create the file")
+
+    store.setTemplate("CPU {cpu}")
+    store.setShowPressureDot(false)
+    _ = check.expectNoThrow("settings save") { try store.save() }
+    let reloaded = SettingsStore(url: url).load()
+    check.expectEqual(reloaded.menuBarTemplate, "CPU {cpu}", "a saved template survives a reload")
+    check.expectEqual(reloaded.showPressureDot, false, "a saved dot toggle survives a reload")
+
+    try? Data("{ not json".utf8).write(to: url)
+    check.expectEqual(SettingsStore(url: url).load(), AppSettings(), "a corrupt file loads the defaults")
+    check.expect(FileManager.default.fileExists(atPath: url.path + ".bak"), "a corrupt file is kept as settings.json.bak")
+    check.expect(!FileManager.default.fileExists(atPath: url.path), "the corrupt file leaves its original path")
+
+    try? Data(#"{"menuBarTemplate":"x"}"#.utf8).write(to: url)
+    check.expectEqual(SettingsStore(url: url).load().showPressureDot, true, "a missing key takes its default")
+
+    try? Data(#"{"menuBarTemplate":"   "}"#.utf8).write(to: url)
+    check.expectEqual(SettingsStore(url: url).load().menuBarTemplate, AppSettings.defaultTemplate, "a blank template loads as the default")
+
+    try? Data("{\"menuBarTemplate\":\"\(String(repeating: "a", count: 500))\"}".utf8).write(to: url)
+    check.expectEqual(SettingsStore(url: url).load().menuBarTemplate.count, AppSettings.maxTemplateLength, "an oversized template is cut to the limit")
+
+    store.setTemplate(String(repeating: "b", count: 500))
+    check.expectEqual(store.settings.menuBarTemplate.count, AppSettings.maxTemplateLength, "setTemplate cuts to the limit")
+}
+
 exit(check.summary())
