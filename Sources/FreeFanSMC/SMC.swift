@@ -123,6 +123,17 @@ private let kSMCSelectorReadKeyInfo: UInt8 = 9
 private let kSMCSelectorReadBytes: UInt8 = 5
 private let kSMCSelectorWriteBytes: UInt8 = 6
 
+// Four-character-type codes as they arrive in keyInfo.dataType.
+private let kSMCTypeFloat: UInt32 = fourCC("flt ")
+private let kSMCTypeUInt8: UInt32 = fourCC("ui8 ")
+private let kSMCTypeUInt32: UInt32 = fourCC("ui32")
+
+// 0xe00002c1 = kIOReturnNotPrivileged. Spelled out so the mapping does not depend on an IOKit symbol.
+private let kIOMessageNotPrivileged = kern_return_t(bitPattern: 0xe00002c1)
+
+// The wire struct carries exactly 32 data bytes.
+private let kSMCBytesCapacity = 32
+
 // MARK: - SMC
 
 /// One AppleSMC user-client connection.
@@ -131,6 +142,11 @@ private let kSMCSelectorWriteBytes: UInt8 = 6
 /// process runs as root. Instances are NOT thread-safe: confine each instance to one queue.
 public final class SMC {
     private var connection: io_connect_t = 0
+
+    /// One keyInfo call per key, cached so a read costs a dictionary lookup plus the kernel call.
+    private var keyInfoCache: [String: SMCKeyInfo] = [:]
+    /// Keys already proven absent. A missing key read costs about 50x a present one, so never re-probe.
+    private var absentKeys: Set<String> = []
 
     public init() throws {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
@@ -166,46 +182,138 @@ public final class SMC {
         return output
     }
 
-    // TODO(node-sensor-read): implement the public surface below. Requirements:
-    // - cache keyInfo per key in a dictionary so a read costs one dictionary lookup plus the kernel call;
-    // - memoize absent keys in a Set so a missing key is probed once, never re-probed;
-    // - "flt " is 4-byte little-endian IEEE754; "ui8 " is one byte; ui16/ui32 are big-endian;
-    // - readUInt8/readFloat throw unexpectedSize/unexpectedType when the key's declared size or type
-    //   does not match;
-    // - writeFloat/writeUInt8 use selector 6 and must set dataSize + dataType from keyInfo on the input;
-    //   a non-zero result byte or a kern failure is a writeFailed; 0xe00002c1 means notPrivileged;
-    // - rawRead returns the declared type string and the leading dataSize bytes.
-    // Public signatures are frozen: do not change them.
+    // MARK: Public surface
 
+    /// Declared size, type and attribute byte for a key. The first call for a key hits the SMC; later
+    /// calls are served from the cache. A key the SMC rejects is remembered as absent and reports
+    /// keyNotFound on every later call without touching the kernel again.
     public func keyInfo(_ key: String) throws -> SMCKeyInfo {
-        throw SMCError.keyNotFound(key)
+        if let cached = keyInfoCache[key] { return cached }
+        if absentKeys.contains(key) { throw SMCError.keyNotFound(key) }
+
+        var input = SMCKeyData()
+        input.key = fourCC(key)
+        input.data8 = kSMCSelectorReadKeyInfo
+
+        let output: SMCKeyData
+        do {
+            output = try rawCall(&input)
+        } catch SMCError.callFailed {
+            // A non-zero result byte means this key does not exist on this machine.
+            absentKeys.insert(key)
+            throw SMCError.keyNotFound(key)
+        }
+
+        let info = SMCKeyInfo(
+            dataSize: output.keyInfo.dataSize,
+            dataType: output.keyInfo.dataType,
+            attributes: output.keyInfo.dataAttributes
+        )
+        // A key that resolves but declares zero bytes is not readable; treat it as absent.
+        guard info.dataSize > 0 else {
+            absentKeys.insert(key)
+            throw SMCError.keyNotFound(key)
+        }
+        keyInfoCache[key] = info
+        return info
     }
 
     public func keyExists(_ key: String) -> Bool {
-        false
+        (try? keyInfo(key)) != nil
     }
 
     public func readFloat(_ key: String) throws -> Float {
-        throw SMCError.keyNotFound(key)
+        let info = try keyInfo(key)
+        guard info.dataType == kSMCTypeFloat else { throw SMCError.unexpectedType(key: key, type: info.dataType) }
+        guard info.dataSize == 4 else { throw SMCError.unexpectedSize(key: key, size: info.dataSize) }
+        let bytes = try readBytes(key, info: info)
+        // "flt " is 4-byte little-endian IEEE754.
+        let bits = UInt32(bytes[0])
+            | (UInt32(bytes[1]) << 8)
+            | (UInt32(bytes[2]) << 16)
+            | (UInt32(bytes[3]) << 24)
+        return Float(bitPattern: bits)
     }
 
     public func readUInt8(_ key: String) throws -> UInt8 {
-        throw SMCError.keyNotFound(key)
+        let info = try keyInfo(key)
+        guard info.dataType == kSMCTypeUInt8 else { throw SMCError.unexpectedType(key: key, type: info.dataType) }
+        guard info.dataSize == 1 else { throw SMCError.unexpectedSize(key: key, size: info.dataSize) }
+        let bytes = try readBytes(key, info: info)
+        return bytes[0]
     }
 
     public func readUInt32(_ key: String) throws -> UInt32 {
-        throw SMCError.keyNotFound(key)
+        let info = try keyInfo(key)
+        guard info.dataType == kSMCTypeUInt32 else { throw SMCError.unexpectedType(key: key, type: info.dataType) }
+        guard info.dataSize == 4 else { throw SMCError.unexpectedSize(key: key, size: info.dataSize) }
+        let bytes = try readBytes(key, info: info)
+        // ui32 is big-endian on the SMC wire.
+        return (UInt32(bytes[0]) << 24)
+            | (UInt32(bytes[1]) << 16)
+            | (UInt32(bytes[2]) << 8)
+            | UInt32(bytes[3])
     }
 
     public func writeFloat(_ key: String, _ value: Float) throws {
-        throw SMCError.notPrivileged
+        let info = try keyInfo(key)
+        guard info.dataType == kSMCTypeFloat else { throw SMCError.unexpectedType(key: key, type: info.dataType) }
+        guard info.dataSize == 4 else { throw SMCError.unexpectedSize(key: key, size: info.dataSize) }
+        let bits = value.bitPattern
+        let bytes: [UInt8] = [
+            UInt8(bits & 0xff),
+            UInt8((bits >> 8) & 0xff),
+            UInt8((bits >> 16) & 0xff),
+            UInt8((bits >> 24) & 0xff),
+        ]
+        try writeBytes(key, info: info, bytes: bytes)
     }
 
     public func writeUInt8(_ key: String, _ value: UInt8) throws {
-        throw SMCError.notPrivileged
+        let info = try keyInfo(key)
+        guard info.dataType == kSMCTypeUInt8 else { throw SMCError.unexpectedType(key: key, type: info.dataType) }
+        guard info.dataSize == 1 else { throw SMCError.unexpectedSize(key: key, size: info.dataSize) }
+        try writeBytes(key, info: info, bytes: [value])
     }
 
     public func rawRead(_ key: String) throws -> (type: String, bytes: [UInt8]) {
-        throw SMCError.keyNotFound(key)
+        let info = try keyInfo(key)
+        let bytes = try readBytes(key, info: info)
+        return (fourCCString(info.dataType), bytes)
+    }
+
+    // MARK: Internals
+
+    /// Selector-5 read of exactly `info.dataSize` bytes for a key whose keyInfo is already known.
+    private func readBytes(_ key: String, info: SMCKeyInfo) throws -> [UInt8] {
+        var input = SMCKeyData()
+        input.key = fourCC(key)
+        input.keyInfo.dataSize = info.dataSize
+        input.keyInfo.dataType = info.dataType
+        input.data8 = kSMCSelectorReadBytes
+
+        let output = try rawCall(&input)
+        let count = min(Int(info.dataSize), kSMCBytesCapacity)
+        return withUnsafeBytes(of: output.bytes) { Array($0.prefix(count)) }
+    }
+
+    /// Selector-6 write. dataSize and dataType come from keyInfo; the payload is little-endian already.
+    private func writeBytes(_ key: String, info: SMCKeyInfo, bytes: [UInt8]) throws {
+        var input = SMCKeyData()
+        input.key = fourCC(key)
+        input.keyInfo.dataSize = info.dataSize
+        input.keyInfo.dataType = info.dataType
+        input.data8 = kSMCSelectorWriteBytes
+        withUnsafeMutableBytes(of: &input.bytes) { raw in
+            for (index, byte) in bytes.prefix(kSMCBytesCapacity).enumerated() { raw[index] = byte }
+        }
+
+        do {
+            _ = try rawCall(&input)
+        } catch let error as SMCError {
+            guard case let .callFailed(failedKey, kern, result) = error else { throw error }
+            if kern == kIOMessageNotPrivileged { throw SMCError.notPrivileged }
+            throw SMCError.writeFailed(key: failedKey, kern: kern, result: result)
+        }
     }
 }

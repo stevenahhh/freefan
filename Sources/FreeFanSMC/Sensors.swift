@@ -106,15 +106,78 @@ public struct SensorReading: Equatable, Sendable {
 public final class Telemetry {
     public private(set) var fans: [FanInfo] = []
 
-    /// TODO(node-sensor-read): discover which CPU/GPU keys are present ONCE (a missing key costs about
-    /// 50x a present one to read, so never read an absent key twice), keep the discovered lists, read
-    /// FNum, and read each fan's Mn/Mx for FanInfo. Keep the SMC connection for the life of the object.
+    private let smc: SMC
+    private let presentCPUKeys: [String]
+    private let presentGPUKeys: [String]
+
+    /// Discovery happens exactly once here. A key that does not exist is probed once during init and
+    /// then never read again (an absent key costs about 50x a present one), so the discovered lists
+    /// are what every later tick reads.
     public init(smc: SMC) throws {
-        throw SMCError.serviceNotFound
+        self.smc = smc
+
+        self.presentCPUKeys = SensorCatalog.cpuKeys.filter { smc.keyExists($0) }
+        self.presentGPUKeys = SensorCatalog.gpuKeys.filter { smc.keyExists($0) }
+
+        // FNum is a ui8 key on this platform; fall back to a ui32 variant if that is what is present.
+        var fanCount = 0
+        if let count = try? smc.readUInt8("FNum") {
+            fanCount = Int(count)
+        } else if let count = try? smc.readUInt32("FNum") {
+            fanCount = Int(count)
+        }
+
+        var discovered: [FanInfo] = []
+        for index in 0..<fanCount {
+            // Read the real limits; never hardcode them. A fan whose limits cannot be read is not
+            // usable (clamping to [0, 0] would stop it), so it is skipped rather than defaulted.
+            guard let minRPM = try? smc.readFloat("F\(index)Mn"),
+                  let maxRPM = try? smc.readFloat("F\(index)Mx"),
+                  minRPM.isFinite, maxRPM.isFinite, minRPM > 0, maxRPM > minRPM else { continue }
+            discovered.append(FanInfo(index: index, minRPM: minRPM, maxRPM: maxRPM))
+        }
+        self.fans = discovered
     }
 
     /// Reads CPU max, GPU max and per-fan actual/target/manual. Failed or out-of-range values are nil.
     public func read() -> SensorReading {
-        SensorReading(cpu: nil, gpu: nil, fans: [])
+        let cpu = maxTemperature(presentCPUKeys)
+        let gpu = maxTemperature(presentGPUKeys)
+
+        var readings: [FanReading] = []
+        readings.reserveCapacity(fans.count)
+        for fan in fans {
+            let rpm = validRPM(try? smc.readFloat(fan.actualKey), fan: fan)
+            let target = validRPM(try? smc.readFloat(fan.targetKey), fan: fan)
+            let manual = (try? smc.readUInt8(fan.modeKey)) == 1
+            readings.append(FanReading(index: fan.index, rpm: rpm, targetRPM: target, manual: manual))
+        }
+
+        return SensorReading(cpu: cpu, gpu: gpu, fans: readings)
+    }
+
+    // MARK: Internals
+
+    /// Highest valid reading among the keys, or nil when none is valid.
+    private func maxTemperature(_ keys: [String]) -> Float? {
+        var best: Float?
+        for key in keys {
+            guard let raw = try? smc.readFloat(key), let value = validTemperature(raw) else { continue }
+            best = best.map { max($0, value) } ?? value
+        }
+        return best
+    }
+
+    private func validTemperature(_ value: Float) -> Float? {
+        guard value.isFinite,
+              value >= SensorCatalog.temperatureFloor,
+              value <= SensorCatalog.temperatureCeiling else { return nil }
+        return value
+    }
+
+    /// A fan RPM is valid when it is finite, non-negative and not absurdly above the fan's own maximum.
+    private func validRPM(_ value: Float?, fan: FanInfo) -> Float? {
+        guard let value, value.isFinite, value >= 0, value <= fan.maxRPM + 500 else { return nil }
+        return value
     }
 }
