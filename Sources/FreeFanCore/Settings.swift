@@ -1,0 +1,92 @@
+import Foundation
+
+public struct AppSettings: Codable, Equatable, Sendable {
+    public static let currentVersion = 1
+    public static let defaultTemplate = "{max}\u{00B0} {rpm}"
+    public static let maxTemplateLength = 120
+
+    public var version: Int
+    public var menuBarTemplate: String
+    public var showPressureDot: Bool
+
+    public init(
+        version: Int = AppSettings.currentVersion,
+        menuBarTemplate: String = AppSettings.defaultTemplate,
+        showPressureDot: Bool = true
+    ) {
+        self.version = version
+        self.menuBarTemplate = menuBarTemplate
+        self.showPressureDot = showPressureDot
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version, menuBarTemplate, showPressureDot
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? AppSettings.currentVersion
+        menuBarTemplate = try container.decodeIfPresent(String.self, forKey: .menuBarTemplate) ?? AppSettings.defaultTemplate
+        showPressureDot = try container.decodeIfPresent(Bool.self, forKey: .showPressureDot) ?? true
+    }
+
+    static func clamped(_ template: String) -> String {
+        String(template.prefix(maxTemplateLength))
+    }
+
+    fileprivate mutating func sanitize() {
+        menuBarTemplate = menuBarTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? AppSettings.defaultTemplate
+            : AppSettings.clamped(menuBarTemplate)
+    }
+}
+
+/// ~/Library/Application Support/FreeFan/settings.json. Loading never fails and never writes: a missing file
+/// means defaults, an unreadable one is moved to settings.json.bak.
+public final class SettingsStore {
+    public static var defaultURL: URL {
+        PresetStore.defaultURL.deletingLastPathComponent().appendingPathComponent("settings.json")
+    }
+
+    public let url: URL
+    public private(set) var settings = AppSettings()
+
+    public init(url: URL = SettingsStore.defaultURL) {
+        self.url = url
+    }
+
+    @discardableResult
+    public func load() -> AppSettings {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: url.path) else {
+            settings = AppSettings()
+            return settings
+        }
+        do {
+            var decoded = try JSONDecoder().decode(AppSettings.self, from: Data(contentsOf: url))
+            decoded.sanitize()
+            settings = decoded
+        } catch {
+            let backup = URL(fileURLWithPath: url.path + ".bak")
+            try? fileManager.removeItem(at: backup)
+            try? fileManager.moveItem(at: url, to: backup)
+            settings = AppSettings()
+        }
+        return settings
+    }
+
+    public func setTemplate(_ template: String) {
+        settings.menuBarTemplate = AppSettings.clamped(template)
+    }
+
+    public func setShowPressureDot(_ show: Bool) {
+        settings.showPressureDot = show
+    }
+
+    public func save() throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(settings).write(to: url, options: [.atomic])
+    }
+}
