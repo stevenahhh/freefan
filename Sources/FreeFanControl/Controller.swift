@@ -41,42 +41,46 @@ public final class FanController {
     public private(set) var writes: Int = 0
     public private(set) var lastError: String?
 
+    private var curve: FanCurve?
+    private var input: FanControlInput?
+    private var fixedPercent: Double?
+    private var panicked = false
+    private var usedTemperature: Float?
+    private var lastTargets: [Float?]
+
     public init(fans: [FanInfo], config: ControllerConfig = ControllerConfig()) {
         self.fans = fans
         self.config = config
+        self.lastTargets = Array(repeating: nil, count: fans.count)
     }
 
-    // TODO(node-control-engine): implement to this contract.
-    // - setAuto(): mode .auto, clear panic/curve state.
-    // - setCurve/setFixed: validate first (a curve that fails validate() throws; a null/non-finite or
-    //   out-of-range fixed percent throws), then mode .curve/.fixed, panic cleared.
-    // - noteWriteFailure(reason): lastError = reason, mode .monitor.
-    // - tick(temperature:fans:) returns the ordered writes for this tick:
-    //     * mode .auto or .monitor  -> []
-    //     * temperature nil or not finite or outside SensorCatalog 0...130 -> release every fan that is
-    //       currently manual (.setManual(fan:on:false)) and drop to .auto: a dead sensor must hand the
-    //       fans back to the system, never hold a stale target;
-    //     * panic latches at panicOn and clears below panicOff; while panicking the target is each fan's
-    //       maxRPM (bypassing the dead band on the way in and out);
-    //     * otherwise target = fans[i].rpm(percent: curve.percent(at: usedTemperature)) where usedTemperature
-    //       tracks the raw temperature up instantly but only follows it down once it has fallen more than
-    //       config.hysteresis below the last used value;
-    //     * a fan whose F{n}md is not 1 is re-engaged: emit its setTarget FIRST and then setManual(true),
-    //       even when the target is inside the dead band of the last written value;
-    //     * otherwise emit setTarget only when the new target differs from the last written value for that
-    //       fan by at least config.deadbandRPM;
-    //     * mode reflects .curve/.fixed, or .panic while panicking.
-    // - noteApplied(actions): bump writes for each setTarget/setManual emitted and record the last written
-    //   target per fan (this is what the dead band compares against).
-    // Keep it free of I/O: it must be fully exercisable from ControlCheck without hardware.
-
     public func setAuto() {
+        mode = .auto
+        clearControl()
     }
 
     public func setCurve(_ curve: FanCurve, input: FanControlInput) throws {
+        try curve.validate()
+        self.curve = curve
+        self.input = input
+        self.fixedPercent = nil
+        self.panicked = false
+        self.usedTemperature = nil
+        self.lastTargets = Array(repeating: nil, count: fans.count)
+        self.mode = .curve
     }
 
     public func setFixed(percent: Double) throws {
+        guard percent.isFinite, percent >= 0, percent <= 100 else {
+            throw ProtocolError.badValue("fixed percent must be finite and within 0...100")
+        }
+        self.fixedPercent = percent
+        self.curve = nil
+        self.input = nil
+        self.panicked = false
+        self.usedTemperature = nil
+        self.lastTargets = Array(repeating: nil, count: fans.count)
+        self.mode = .fixed
     }
 
     public func noteWriteFailure(_ reason: String) {
@@ -84,10 +88,105 @@ public final class FanController {
         mode = .monitor
     }
 
-    public func tick(temperature: Float?, fans: [FanObservation]) -> [FanAction] {
-        []
+    public func tick(temperature: Float?, fans observations: [FanObservation]) -> [FanAction] {
+        guard mode == .curve || mode == .fixed || mode == .panic else {
+            return []
+        }
+
+        guard let t = temperature,
+              t.isFinite,
+              t >= SensorCatalog.temperatureFloor,
+              t <= SensorCatalog.temperatureCeiling else {
+            var actions: [FanAction] = []
+            for i in self.fans.indices where observation(at: i, in: observations).manual {
+                actions.append(.setManual(fan: self.fans[i].index, on: false))
+            }
+            mode = .auto
+            clearControl()
+            return actions
+        }
+
+        let wasPanicked = panicked
+        if panicked {
+            if t < config.panicOff { panicked = false }
+        } else if t >= config.panicOn {
+            panicked = true
+        }
+        let enteringPanic = panicked && !wasPanicked
+        let leavingPanic = !panicked && wasPanicked
+
+        updateUsedTemperature(t)
+
+        var actions: [FanAction] = []
+        for i in self.fans.indices {
+            let fan = self.fans[i]
+            let observation = observation(at: i, in: observations)
+
+            let target: Float
+            if panicked {
+                target = fan.maxRPM
+            } else if let curve {
+                target = fan.rpm(percent: curve.percent(at: Double(usedTemperature ?? t)))
+            } else if let fixedPercent {
+                target = fan.rpm(percent: fixedPercent)
+            } else {
+                continue
+            }
+
+            // Re-engagement after a reclaim: setTarget MUST precede setManual(on: true),
+            // even when the target sits inside the dead band. Writing md = 1 before a target
+            // has ever been written stops the fan.
+            let reEngage = !observation.manual
+            let force = reEngage || enteringPanic || leavingPanic
+            if force || exceedsDeadband(target, fan: i) {
+                actions.append(.setTarget(fan: fan.index, rpm: target))
+            }
+            if reEngage {
+                actions.append(.setManual(fan: fan.index, on: true))
+            }
+        }
+
+        mode = panicked ? .panic : (curve != nil ? .curve : .fixed)
+        return actions
     }
 
     public func noteApplied(_ actions: [FanAction]) {
+        for action in actions {
+            writes += 1
+            if case let .setTarget(fan, rpm) = action,
+               let i = fans.firstIndex(where: { $0.index == fan }) {
+                lastTargets[i] = rpm
+            }
+        }
+    }
+
+    private func clearControl() {
+        curve = nil
+        input = nil
+        fixedPercent = nil
+        panicked = false
+        usedTemperature = nil
+        lastTargets = Array(repeating: nil, count: fans.count)
+    }
+
+    private func observation(at index: Int, in observations: [FanObservation]) -> FanObservation {
+        index < observations.count ? observations[index] : FanObservation(rpm: nil, manual: false)
+    }
+
+    private func updateUsedTemperature(_ raw: Float) {
+        guard let used = usedTemperature else {
+            usedTemperature = raw
+            return
+        }
+        if raw > used {
+            usedTemperature = raw
+        } else if raw < used - config.hysteresis {
+            usedTemperature = raw
+        }
+    }
+
+    private func exceedsDeadband(_ target: Float, fan index: Int) -> Bool {
+        guard let last = lastTargets[index] else { return true }
+        return abs(target - last) >= config.deadbandRPM
     }
 }
