@@ -88,7 +88,12 @@ public final class FanController {
         mode = .monitor
     }
 
-    public func tick(temperature: Float?, fans observations: [FanObservation]) -> [FanAction] {
+    /// - Parameters:
+    ///   - temperature: what the curve follows (the preset's input).
+    ///   - safetyTemperature: the hottest CPU/GPU sensor. The panic latch watches the larger of the two, so an
+    ///     input that runs cool (battery, a single die) can never hide an overheating SoC. Nil or an invalid
+    ///     value leaves the latch on `temperature` alone.
+    public func tick(temperature: Float?, safetyTemperature: Float? = nil, fans observations: [FanObservation]) -> [FanAction] {
         guard mode == .curve || mode == .fixed || mode == .panic else {
             return []
         }
@@ -106,10 +111,16 @@ public final class FanController {
             return actions
         }
 
+        var hottest = t
+        if let safety = safetyTemperature, safety.isFinite,
+           safety >= SensorCatalog.temperatureFloor, safety <= SensorCatalog.temperatureCeiling {
+            hottest = max(t, safety)
+        }
+
         let wasPanicked = panicked
         if panicked {
-            if t < config.panicOff { panicked = false }
-        } else if t >= config.panicOn {
+            if hottest < config.panicOff { panicked = false }
+        } else if hottest >= config.panicOn {
             panicked = true
         }
         let enteringPanic = panicked && !wasPanicked
@@ -188,5 +199,17 @@ public final class FanController {
     private func exceedsDeadband(_ target: Float, fan index: Int) -> Bool {
         guard let last = lastTargets[index] else { return true }
         return abs(target - last) >= config.deadbandRPM
+    }
+}
+
+extension SensorReading {
+    /// The two temperatures `FanController.tick` needs for a curve driven by `kind`: the curve's own input and
+    /// the hottest CPU/GPU sensor for the panic latch. A non-max input without any CPU/GPU reading yields no
+    /// temperature at all, so control drops back to Auto instead of running with nothing watching the die.
+    public func controlInputs(for kind: FanControlInput) -> (temperature: Float?, safety: Float?) {
+        let soc = input(.max)
+        if kind == .max { return (soc, soc) }
+        guard soc != nil else { return (nil, nil) }
+        return (input(kind), soc)
     }
 }
