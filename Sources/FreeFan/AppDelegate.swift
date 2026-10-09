@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastTitle = ""
     private var menuOpen = false
     private var currentInterval: TimeInterval = 0
+    private var shownPressure: MemoryPressure?
+    private var dotImages: [MemoryPressure: NSImage] = [:]
 
     private var editor: CurveEditorWindowController?
 
@@ -30,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let button = statusItem.button {
             button.title = "--"
             button.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+            button.imagePosition = .imageLeft
         }
         lastTitle = "--"
         menu.delegate = self
@@ -75,17 +78,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             let reading = self.telemetry?.read()
             let fans = self.telemetry?.fans ?? []
+            let pressure = MemoryPressure.read()
             _ = self.helper.refreshStatus()
             if self.helper.isControlling {
                 self.helper.keepAlive()
             }
             DispatchQueue.main.async {
-                self.apply(reading: reading, fans: fans)
+                self.apply(reading: reading, fans: fans, pressure: pressure)
             }
         }
     }
 
-    private func apply(reading: SensorReading?, fans: [FanInfo]) {
+    private func apply(reading: SensorReading?, fans: [FanInfo], pressure: MemoryPressure?) {
         latestReading = reading
         latestFans = fans
 
@@ -93,6 +97,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if title != lastTitle {
             lastTitle = title
             statusItem.button?.title = title
+        }
+
+        if pressure != shownPressure {
+            shownPressure = pressure
+            statusItem.button?.image = pressure.map { dotImage(for: $0) }
+            statusItem.button?.toolTip = pressure.map { "Memory pressure: \($0.label)" }
         }
 
         if let editor, !editor.isOpen {
@@ -114,6 +124,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let fan = reading.fans.filter { $0.rpm != nil }.max { ($0.rpm ?? 0) < ($1.rpm ?? 0) }
         guard let fan else { return nil }
         return latestFans.first { $0.index == fan.index }?.maxRPM
+    }
+
+    /// The same three colors Activity Monitor uses for its Memory Pressure graph. Images are built once per level.
+    private func dotImage(for level: MemoryPressure) -> NSImage {
+        if let cached = dotImages[level] { return cached }
+        let color: NSColor
+        switch level {
+        case .normal: color = .systemGreen
+        case .warning: color = .systemYellow
+        case .critical: color = .systemRed
+        }
+        let image = NSImage(size: NSSize(width: 9, height: 9), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            return true
+        }
+        image.isTemplate = false
+        dotImages[level] = image
+        return image
     }
 
     private static func title(for reading: SensorReading?) -> String {

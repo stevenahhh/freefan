@@ -323,4 +323,16 @@ do {
     check.expect(library?.presets.allSatisfy { $0.input == .max } ?? false, "the v1 presets keep their max input")
 }
 
+// MARK: - Memory pressure
+
+check.expectEqual(MemoryPressure(rawValue: 1), .normal, "level 1 is normal (green)")
+check.expectEqual(MemoryPressure(rawValue: 2), .warning, "level 2 is warning (yellow)")
+check.expectEqual(MemoryPressure(rawValue: 4), .critical, "level 4 is critical (red)")
+for raw in [0, 3, 5, 8, 16, -1] {
+    check.expectEqual(MemoryPressure(rawValue: raw), nil, "level \(raw) is not a pressure state")
+}
+check.expectEqual(MemoryPressure.allCases.count, 3, "exactly three pressure states")
+check.expect(MemoryPressure.read() != nil, "kern.memorystatus_vm_pressure_level is readable on this machine")
+print("[CoreCheck]     live pressure level: \(MemoryPressure.read().map { String($0.rawValue) } ?? "nil")")
+
 exit(check.summary())
