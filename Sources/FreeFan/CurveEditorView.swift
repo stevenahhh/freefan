@@ -75,29 +75,41 @@ enum CurveGeometry {
 }
 
 /// Core Graphics graph of one fan curve: X = temperature 0...110 C, Y = speed 0...100 percent.
-/// Redraws only when the points, the size, the hover/drag state or a displayed live value changes.
+/// The base graph redraws only when the points, the size or the hover/drag state change. The live marker is made of
+/// layers, so its once-a-second updates never redraw the backing store.
 final class CurveEditorView: NSView {
     /// Fires after every accepted edit (drag step, insert, remove) with the new points.
     var onEdit: (([CurvePoint]) -> Void)?
 
-    private(set) var points: [CurvePoint] = []
+    /// Fires once an edit is finished: when a drag ends, and after an insert or a remove.
+    var onCommit: (([CurvePoint]) -> Void)?
+
+    private(set) var points: [CurvePoint] = [] {
+        didSet { updateLiveLayers() }
+    }
 
     private var liveTemperature: Float?
     private var liveRPM: Float?
     private var liveFanMaxRPM: Float?
 
     private var dragIndex: Int?
+    private var dragMoved = false
     private var dragOffset = NSSize.zero
     private var hoverIndex: Int?
     private var trackingArea: NSTrackingArea?
 
+    private let liveLine = CAShapeLayer()
+    private let liveDot = CAShapeLayer()
+    private let livePill = CALayer()
+    private let liveText = CATextLayer()
+
     // Layout, size and opacity constants. Colors come from NSColor semantic system colors only, so the
     // graph follows light/dark appearance and the user's accent color.
     private enum Style {
-        static let leftMargin: CGFloat = 52
-        static let rightMargin: CGFloat = 24
-        static let topMargin: CGFloat = 16
-        static let bottomMargin: CGFloat = 44
+        static let leftMargin: CGFloat = 46
+        static let rightMargin: CGFloat = 14
+        static let topMargin: CGFloat = 12
+        static let bottomMargin: CGFloat = 38
         static let cornerRadius: CGFloat = 6
         static let curveWidth: CGFloat = 2.5
         static let liveLineWidth: CGFloat = 1.5
@@ -121,6 +133,23 @@ final class CurveEditorView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
         setAccessibilityLabel("Fan curve graph")
+
+        wantsLayer = true
+        liveLine.fillColor = nil
+        liveLine.lineWidth = Style.liveLineWidth
+        liveLine.lineDashPattern = [5, 3]
+        liveDot.lineWidth = Style.dotRingWidth
+        livePill.borderWidth = 1
+        liveText.font = Style.pillFont
+        liveText.fontSize = Style.pillFont.pointSize
+        liveText.alignmentMode = .left
+        liveText.truncationMode = .none
+        livePill.addSublayer(liveText)
+        for layer in [liveLine, liveDot, livePill] {
+            layer.isHidden = true
+            self.layer?.addSublayer(layer)
+        }
+        applyLiveColors()
     }
 
     required init?(coder: NSCoder) {
@@ -149,7 +178,7 @@ final class CurveEditorView: NSView {
         liveTemperature = newTemperature
         liveRPM = newRPM
         liveFanMaxRPM = newMax
-        needsDisplay = true
+        updateLiveLayers()
     }
 
     private var plotRect: NSRect {
@@ -232,6 +261,7 @@ final class CurveEditorView: NSView {
         if let hit {
             let center = viewPoint(t: points[hit].t, p: points[hit].p, in: plotRect)
             dragIndex = hit
+            dragMoved = false
             dragOffset = NSSize(width: center.x - location.x, height: center.y - location.y)
             needsDisplay = true
             return
@@ -252,6 +282,7 @@ final class CurveEditorView: NSView {
         let moved = CurveGeometry.moved(points, index: index, toTemperature: target.t, percent: target.p)
         if moved != points[index] {
             points[index] = moved
+            dragMoved = true
             onEdit?(points)
         }
         needsDisplay = true
@@ -260,6 +291,10 @@ final class CurveEditorView: NSView {
     override func mouseUp(with event: NSEvent) {
         guard dragIndex != nil else { return }
         dragIndex = nil
+        if dragMoved {
+            dragMoved = false
+            onCommit?(points)
+        }
         hoverIndex = hitIndex(at: convert(event.locationInWindow, from: nil))
         needsDisplay = true
     }
@@ -280,6 +315,7 @@ final class CurveEditorView: NSView {
         points = updated
         hoverIndex = nil
         onEdit?(points)
+        onCommit?(points)
         needsDisplay = true
     }
 
@@ -292,6 +328,7 @@ final class CurveEditorView: NSView {
         dragIndex = nil
         hoverIndex = nil
         onEdit?(points)
+        onCommit?(points)
         needsDisplay = true
     }
 
@@ -307,7 +344,6 @@ final class CurveEditorView: NSView {
         frame.addClip()
         drawGrid(in: plot)
         drawCurve(in: plot)
-        drawLiveMarker(in: plot)
         NSGraphicsContext.restoreGraphicsState()
 
         NSColor.separatorColor.setStroke()
@@ -316,7 +352,6 @@ final class CurveEditorView: NSView {
 
         drawDots(in: plot)
         drawAxes(in: plot)
-        drawLiveLabel(in: plot)
         drawDragReadout(in: plot)
     }
 
@@ -380,33 +415,6 @@ final class CurveEditorView: NSView {
         line.stroke()
     }
 
-    private func drawLiveMarker(in plot: NSRect) {
-        guard let temperature = liveTemperature else { return }
-        let clamped = min(max(Double(temperature), 0), CurveGeometry.maxTemperature)
-        let percent = FanCurve(points: points).percent(at: Double(temperature))
-        let dotCenter = viewPoint(t: clamped, p: percent, in: plot)
-
-        let line = NSBezierPath()
-        line.lineWidth = Style.liveLineWidth
-        line.setLineDash([5, 3], count: 2, phase: 0)
-        line.move(to: NSPoint(x: dotCenter.x, y: plot.minY))
-        line.line(to: NSPoint(x: dotCenter.x, y: plot.maxY))
-        NSColor.systemOrange.setStroke()
-        line.stroke()
-
-        let dot = NSBezierPath(ovalIn: NSRect(
-            x: dotCenter.x - Style.liveDotRadius,
-            y: dotCenter.y - Style.liveDotRadius,
-            width: Style.liveDotRadius * 2,
-            height: Style.liveDotRadius * 2
-        ))
-        NSColor.systemOrange.setFill()
-        dot.fill()
-        NSColor.textBackgroundColor.setStroke()
-        dot.lineWidth = Style.dotRingWidth
-        dot.stroke()
-    }
-
     private func drawDots(in plot: NSRect) {
         for (index, point) in points.enumerated() where point.t >= 0 && point.t <= CurveGeometry.maxTemperature {
             let center = viewPoint(t: point.t, p: point.p, in: plot)
@@ -465,8 +473,64 @@ final class CurveEditorView: NSView {
         }
     }
 
-    private func drawLiveLabel(in plot: NSRect) {
-        guard let temperature = liveTemperature else { return }
+    override func layout() {
+        super.layout()
+        updateLiveLayers()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        liveText.contentsScale = window?.backingScaleFactor ?? 2
+        applyLiveColors()
+        updateLiveLayers()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyLiveColors()
+    }
+
+    private func applyLiveColors() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let orange = NSColor.systemOrange.cgColor
+            liveLine.strokeColor = orange
+            liveDot.fillColor = orange
+            liveDot.strokeColor = NSColor.textBackgroundColor.cgColor
+            livePill.borderColor = orange
+            livePill.backgroundColor = NSColor.controlBackgroundColor.cgColor
+            liveText.foregroundColor = NSColor.labelColor.cgColor
+        }
+    }
+
+    private func updateLiveLayers() {
+        let plot = plotRect
+        let visible = liveTemperature != nil && !points.isEmpty && plot.width > 8 && plot.height > 8
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        for layer in [liveLine, liveDot, livePill] where layer.isHidden == visible {
+            layer.isHidden = !visible
+        }
+        guard visible, let temperature = liveTemperature else { return }
+
+        let clamped = min(max(Double(temperature), 0), CurveGeometry.maxTemperature)
+        let percent = FanCurve(points: points).percent(at: Double(temperature))
+        let center = viewPoint(t: clamped, p: percent, in: plot)
+
+        let line = CGMutablePath()
+        line.move(to: CGPoint(x: center.x, y: plot.minY))
+        line.addLine(to: CGPoint(x: center.x, y: plot.maxY))
+        liveLine.path = line
+        liveDot.path = CGPath(
+            ellipseIn: CGRect(
+                x: center.x - Style.liveDotRadius,
+                y: center.y - Style.liveDotRadius,
+                width: Style.liveDotRadius * 2,
+                height: Style.liveDotRadius * 2
+            ),
+            transform: nil
+        )
+
         var text = String(format: "%.1f\u{00B0}C", temperature)
         if let rpm = liveRPM {
             if let maximum = liveFanMaxRPM {
@@ -475,18 +539,23 @@ final class CurveEditorView: NSView {
                 text += String(format: "   %.0f rpm", rpm)
             }
         }
+        let textSize = (text as NSString).size(withAttributes: pillAttributes)
         let size = pillSize(for: text)
-        let markerX = viewPoint(t: min(max(Double(temperature), 0), CurveGeometry.maxTemperature), p: 0, in: plot).x
-        // Sit beside the top of the marker line, flipping to the left when the right side has no room.
-        var x = markerX + Style.pillOffset
+        var x = center.x + Style.pillOffset
         if x + size.width > plot.maxX {
-            x = markerX - Style.pillOffset - size.width
+            x = center.x - Style.pillOffset - size.width
         }
-        let origin = NSPoint(
+        livePill.frame = CGRect(
             x: min(max(x, plot.minX), plot.maxX - size.width),
-            y: plot.maxY - size.height - Style.pillOffset
+            y: plot.maxY - size.height - Style.pillOffset,
+            width: size.width,
+            height: size.height
         )
-        drawPill(text, at: origin, size: size, tint: .systemOrange)
+        livePill.cornerRadius = size.height / 2
+        liveText.frame = CGRect(x: Style.pillPaddingX, y: Style.pillPaddingY, width: ceil(textSize.width) + 2, height: ceil(textSize.height))
+        if liveText.string as? String != text {
+            liveText.string = text
+        }
     }
 
     private func drawDragReadout(in plot: NSRect) {

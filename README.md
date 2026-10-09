@@ -4,7 +4,7 @@ Minimal macOS menu-bar fan control for Apple Silicon.
 
 - Live temperatures and fan RPM in the menu bar
 - Temperature-to-speed curves edited on a graph
-- Saved presets, switchable from the menu
+- Saved presets, one click away in the popover
 - Near-zero CPU and memory overhead
 
 ## Build and run
@@ -15,13 +15,15 @@ bash scripts/build-app.sh          # assembles and ad-hoc signs build/FreeFan.ap
 open build/FreeFan.app
 ```
 
-Then choose **Install Helper…** from the menu. That asks for an administrator password once and
-installs a small root daemon (`/Library/LaunchDaemons/com.stevenahhh.freefan.helper.plist`) which is
-the only process that writes to the SMC. Uninstall it again from the same menu.
+Then click the menu-bar item and choose **Install Helper…** in the popover footer. That asks for an
+administrator password once and installs a small root daemon
+(`/Library/LaunchDaemons/com.stevenahhh.freefan.helper.plist`) which is the only process that writes
+to the SMC. Uninstall it again from the same place.
 
-The app shows `52° 2.3k` in the menu bar, opens a menu with live CPU/GPU/fan readings, the preset
-list and the curve editor. Selecting a preset sends the curve to the daemon; selecting **Auto**
-returns the fans to the system. "Auto" is a mode, not a preset.
+The app shows `52° 2.3k` in the menu bar. Clicking it opens a popover with live CPU, GPU, battery and
+fan readings, the memory pressure, a chip per preset and the curve editor. Clicking a chip activates
+that preset and shows its curve; every edit is saved when you let go of the mouse and sent to the
+daemon right away. **Auto** returns the fans to the system. "Auto" is a mode, not a preset.
 
 ## Layout
 
@@ -31,7 +33,7 @@ returns the fans to the system. "Auto" is a mode, not a preset.
 | `Sources/FreeFanCore` | fan curve, preset store, socket protocol |
 | `Sources/FreeFanControl` | the decision engine (hysteresis, dead band, panic) |
 | `Sources/FreeFanHelper` | the root daemon: socket, lease watchdog, control tick, sleep handling |
-| `Sources/FreeFan` | the menu bar app and the curve editor |
+| `Sources/FreeFan` | the menu bar app, its popover and the curve editor |
 | `Sources/*Check` | executable checks (XCTest is unavailable with Command Line Tools only) |
 | `docs/SPEC.md` | the researched implementation spec |
 | `docs/HARDWARE-VERIFICATION.md` | measured evidence on the target machine |

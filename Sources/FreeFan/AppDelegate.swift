@@ -2,7 +2,7 @@ import AppKit
 import FreeFanCore
 import FreeFanSMC
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let store = PresetStore()
     private let helper = HelperClient()
     private let installer = HelperInstaller()
@@ -12,36 +12,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var telemetry: Telemetry?
 
     private var statusItem: NSStatusItem!
-    private let menu = NSMenu()
+    private var popover: NSPopover?
+    private var popoverController: PopoverViewController?
     private var timer: DispatchSourceTimer?
 
     private var latestReading: SensorReading?
     private var latestFans: [FanInfo] = []
+    private var latestPressure: MemoryPressure?
+    private var helperMessage: String?
     private var lastTitle = ""
-    private var menuOpen = false
-    private var currentInterval: TimeInterval = 0
     private var shownPressure: MemoryPressure?
-    private var dotImages: [MemoryPressure: NSImage] = [:]
     private var shownAppearance: NSAppearance.Name?
-
-    private var editor: CurveEditorWindowController?
+    private var dotImages: [MemoryPressure: NSImage] = [:]
+    private var currentInterval: TimeInterval = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = try? store.load()
+        installEditMenu()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
             button.title = "--"
             button.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
             button.imagePosition = .imageLeft
+            button.target = self
+            button.action = #selector(togglePopover(_:))
         }
         lastTitle = "--"
-        menu.delegate = self
-        statusItem.menu = menu
 
         startTelemetry()
 
-        // One SMC + Telemetry pair, created once off the main thread.
         smcQueue.async { [weak self] in
             guard let self else { return }
             do {
@@ -57,6 +57,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyActivePreset()
     }
 
+    /// An accessory app has no Edit menu, and without one the text fields ignore cmd-C, cmd-V, cmd-X and cmd-A.
+    private func installEditMenu() {
+        let mainMenu = NSMenu()
+        let appItem = NSMenuItem()
+        appItem.submenu = NSMenu()
+        mainMenu.addItem(appItem)
+
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let editItem = NSMenuItem()
+        editItem.submenu = edit
+        mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
+    }
+
     private func startTelemetry() {
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.setEventHandler { [weak self] in self?.tick() }
@@ -67,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateInterval(force: Bool = false) {
         guard let timer else { return }
-        let interval: TimeInterval = (menuOpen || isEditorOpen) ? 1.0 : 3.0
+        let interval: TimeInterval = popover?.isShown == true ? 1.0 : 3.0
         if !force && interval == currentInterval { return }
         currentInterval = interval
         let leeway = DispatchTimeInterval.milliseconds(Int(interval * 1000 * 0.2))
@@ -93,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func apply(reading: SensorReading?, fans: [FanInfo], pressure: MemoryPressure?) {
         latestReading = reading
         latestFans = fans
+        latestPressure = pressure
 
         let title = Self.title(for: reading)
         let appearance = statusItem.button?.effectiveAppearance.name
@@ -104,39 +123,99 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             statusItem.button?.toolTip = pressure.map { "Memory pressure: \($0.label)" }
         }
 
-        if let editor, !editor.isOpen {
-            self.editor = nil
-            updateInterval()
+        popoverController?.update(snapshot())
+    }
+
+    private func snapshot() -> LiveSnapshot {
+        LiveSnapshot(
+            reading: latestReading,
+            fans: latestFans,
+            pressure: latestPressure,
+            helperInstalled: installer.isInstalled,
+            helperConnected: helper.isConnected,
+            helperStatus: helper.lastStatus,
+            helperError: helper.lastError ?? helperMessage
+        )
+    }
+
+    @objc private func togglePopover(_ sender: Any?) {
+        if let popover, popover.isShown {
+            popover.performClose(sender)
+            return
         }
-        if let editor, editor.isOpen {
-            let peak = reading?.fans.compactMap { $0.rpm }.max()
-            editor.updateLive(
-                temperature: reading?.input(.max),
-                actualRPM: peak,
-                fanMaxRPM: maxRPM(forHighestFanIn: reading)
-            )
+        guard let button = statusItem.button else { return }
+        let controller = PopoverViewController(store: store, actions: popoverActions())
+        popoverController = controller
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.delegate = self
+        popover.contentViewController = controller
+        self.popover = popover
+        _ = controller.view
+        controller.update(snapshot())
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate()
+        updateInterval()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        popover?.contentViewController = nil
+        popover = nil
+        popoverController = nil
+        updateInterval()
+    }
+
+    private func popoverActions() -> PopoverActions {
+        PopoverActions(
+            presetsChanged: { [weak self] in self?.applyActivePreset() },
+            installHelper: { [weak self] in self?.runHelperAction(install: true) },
+            uninstallHelper: { [weak self] in self?.runHelperAction(install: false) },
+            quit: { [weak self] in self?.quit() }
+        )
+    }
+
+    private func applyActivePreset() {
+        if let preset = store.library.activePreset {
+            helper.setCurve(preset)
+        } else {
+            helper.setAuto()
         }
     }
 
-    private func maxRPM(forHighestFanIn reading: SensorReading?) -> Float? {
-        guard let reading else { return nil }
-        let fan = reading.fans.filter { $0.rpm != nil }.max { ($0.rpm ?? 0) < ($1.rpm ?? 0) }
-        guard let fan else { return nil }
-        return latestFans.first { $0.index == fan.index }?.maxRPM
+    private func runHelperAction(install: Bool) {
+        let finish: (Int32, String) -> Void = { [weak self] status, message in
+            self?.finishHelperAction(status: status, message: message)
+        }
+        if install {
+            installer.install(completion: finish)
+        } else {
+            installer.uninstall(completion: finish)
+        }
     }
 
-    /// Fixed sRGB colors: dynamic system colors resolve to monochrome in the menu bar's vibrant appearance.
-    private static func dotColor(for level: MemoryPressure) -> NSColor {
-        switch level {
-        case .normal: return NSColor(srgbRed: 0.204, green: 0.78, blue: 0.349, alpha: 1)
-        case .warning: return NSColor(srgbRed: 1, green: 0.8, blue: 0, alpha: 1)
-        case .critical: return NSColor(srgbRed: 1, green: 0.231, blue: 0.188, alpha: 1)
+    private func finishHelperAction(status: Int32, message: String) {
+        if status == 0 {
+            helperMessage = nil
+            helper.reconnect()
+            applyActivePreset()
+        } else if message.lowercased().contains("cancel") {
+            helperMessage = "Cancelled."
+        } else {
+            helperMessage = message.isEmpty ? "Helper change failed." : message
         }
+        popoverController?.update(snapshot())
+    }
+
+    private func quit() {
+        timer?.cancel()
+        timer = nil
+        helper.shutdown()
+        NSApp.terminate(nil)
     }
 
     private func dotImage(for level: MemoryPressure) -> NSImage {
         if let cached = dotImages[level] { return cached }
-        let color = Self.dotColor(for: level)
+        let color = level.dotColor
         let image = NSImage(size: NSSize(width: 9, height: 9), flipped: false) { rect in
             color.setFill()
             NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
@@ -183,142 +262,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             rpm = "--"
         }
         return "\(temperature) \(rpm)"
-    }
-
-    func menuWillOpen(_ menu: NSMenu) {
-        menuOpen = true
-        rebuildMenu()
-        updateInterval()
-    }
-
-    func menuDidClose(_ menu: NSMenu) {
-        menuOpen = false
-        updateInterval()
-    }
-
-    private func rebuildMenu() {
-        menu.removeAllItems()
-
-        let reading = latestReading
-        menu.addItem(infoItem("CPU \(Self.temperatureText(reading?.cpu))"))
-        menu.addItem(infoItem("GPU \(Self.temperatureText(reading?.gpu))"))
-        for fan in reading?.fans ?? [] {
-            let limits = latestFans.first { $0.index == fan.index }
-            let range = limits.map { "[\(Int($0.minRPM.rounded()))-\(Int($0.maxRPM.rounded()))]" } ?? ""
-            menu.addItem(infoItem("Fan \(fan.index): \(Self.rpmText(fan.rpm)) RPM \(range)"))
-        }
-        menu.addItem(infoItem("Mode: \(modeText())"))
-        menu.addItem(.separator())
-
-        let active = store.library.active
-        menu.addItem(selectionItem(title: "Auto", id: PresetLibrary.autoID, checked: active == PresetLibrary.autoID))
-        for preset in store.library.presets {
-            menu.addItem(selectionItem(title: preset.name, id: preset.id, checked: active == preset.id))
-        }
-        menu.addItem(.separator())
-
-        menu.addItem(actionItem(title: "Edit Curves\u{2026}", action: #selector(editCurves)))
-        if installer.isInstalled {
-            menu.addItem(actionItem(title: "Uninstall Helper\u{2026}", action: #selector(uninstallHelper)))
-        } else {
-            menu.addItem(actionItem(title: "Install Helper\u{2026}", action: #selector(installHelper)))
-        }
-        menu.addItem(actionItem(title: "Quit FreeFan", action: #selector(quit), keyEquivalent: "q"))
-    }
-
-    private func infoItem(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
-    }
-
-    private func selectionItem(title: String, id: String, checked: Bool) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: #selector(selectPreset(_:)), keyEquivalent: "")
-        item.target = self
-        item.representedObject = id
-        item.state = checked ? .on : .off
-        return item
-    }
-
-    private func actionItem(title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
-        item.target = self
-        return item
-    }
-
-    private func modeText() -> String {
-        if !installer.isInstalled { return "Helper not installed" }
-        if store.library.active == PresetLibrary.autoID { return "Auto" }
-        return store.library.activePreset?.name ?? "Auto"
-    }
-
-    @objc private func selectPreset(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String else { return }
-        try? store.setActive(id)
-        applyActivePreset()
-    }
-
-    private func applyActivePreset() {
-        if let preset = store.library.activePreset {
-            helper.setCurve(preset)
-        } else {
-            helper.setAuto()
-        }
-    }
-
-    @objc private func editCurves() {
-        if let editor, !editor.isOpen {
-            self.editor = nil
-        }
-        if editor == nil {
-            editor = CurveEditorWindowController(store: store) { [weak self] in
-                self?.applyActivePreset()
-            }
-        }
-        editor?.show()
-        updateInterval()
-    }
-
-    private var isEditorOpen: Bool { editor?.isOpen ?? false }
-
-    @objc private func installHelper() {
-        installer.install { [weak self] status, message in
-            self?.finishHelperAction(success: status == 0, message: message)
-        }
-    }
-
-    @objc private func uninstallHelper() {
-        installer.uninstall { [weak self] status, message in
-            self?.finishHelperAction(success: status == 0, message: message)
-        }
-    }
-
-    private func finishHelperAction(success: Bool, message: String) {
-        if !success {
-            let alert = NSAlert()
-            alert.messageText = "FreeFan"
-            alert.informativeText = message.lowercased().contains("cancel") ? "Cancelled." : (message.isEmpty ? "Unavailable." : message)
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-        }
-        if menuOpen { rebuildMenu() }
-    }
-
-    @objc private func quit() {
-        timer?.cancel()
-        timer = nil
-        helper.shutdown()
-        NSApp.terminate(nil)
-    }
-
-    private static func temperatureText(_ value: Float?) -> String {
-        guard let value else { return "--" }
-        return String(format: "%.1f\u{00B0}C", value)
-    }
-
-    private static func rpmText(_ value: Float?) -> String {
-        guard let value else { return "--" }
-        return "\(Int(value.rounded()))"
     }
 }
