@@ -53,6 +53,13 @@ cat > "${PLIST_PATH}" << EOF
         <string>--socket</string>
         <string>${SOCKET_PATH}</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MallocMaxMagazines</key>
+        <string>1</string>
+        <key>MallocSpaceEfficient</key>
+        <string>1</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
