@@ -229,7 +229,8 @@ final class HelperDaemon {
         }
         guard !asleep else { return }
 
-        let reading = telemetry.read()
+        // The panic latch always needs the hottest CPU/GPU sensor; the battery only matters to a battery curve.
+        let reading = telemetry.read(activeInput == .battery ? [.cpu, .gpu, .battery, .fans] : [.cpu, .gpu, .fans])
         let inputs = reading.controlInputs(for: activeInput)
         let temperature = inputs.temperature
         let observations = reading.fans.map { FanObservation(rpm: $0.rpm, manual: $0.manual) }

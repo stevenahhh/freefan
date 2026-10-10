@@ -117,6 +117,24 @@ public struct SensorReading: Equatable, Sendable {
     }
 }
 
+/// The groups of sensors one read covers. Every SMC key costs a kernel round trip, so a caller asks only for what it uses.
+public struct SensorSet: OptionSet, Sendable {
+    public let rawValue: Int
+
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+
+    public static let cpu = SensorSet(rawValue: 1)
+    public static let gpu = SensorSet(rawValue: 2)
+    public static let battery = SensorSet(rawValue: 4)
+    /// What the fans actually do: speed and mode.
+    public static let fans = SensorSet(rawValue: 8)
+    /// What the fans were told to do. Only a display wants it; the control loop watches the fans' real speed.
+    public static let fanTargets = SensorSet(rawValue: 16)
+    public static let all: SensorSet = [.cpu, .gpu, .battery, .fans, .fanTargets]
+}
+
 // MARK: - Reader
 
 /// Discovers which sensor keys exist once, then reads them each tick.
@@ -158,21 +176,26 @@ public final class Telemetry {
         self.fans = discovered
     }
 
-    /// Reads CPU max, GPU max, the battery mean and per-fan actual/target/manual. Failed or out-of-range values are nil.
-    public func read() -> SensorReading {
-        let cpu = maxTemperature(presentCPUKeys)
-        let gpu = maxTemperature(presentGPUKeys)
+    /// Reads CPU max, GPU max, the battery mean and per-fan actual/target/manual, limited to `sensors`. A group that
+    /// is left out reads as nil (no fan readings at all when `.fans` is left out). Failed or out-of-range values are nil.
+    public func read(_ sensors: SensorSet = .all) -> SensorReading {
+        let cpu = sensors.contains(.cpu) ? maxTemperature(presentCPUKeys) : nil
+        let gpu = sensors.contains(.gpu) ? maxTemperature(presentGPUKeys) : nil
 
         var readings: [FanReading] = []
-        readings.reserveCapacity(fans.count)
-        for fan in fans {
-            let rpm = validRPM(try? smc.readFloat(fan.actualKey), fan: fan)
-            let target = validRPM(try? smc.readFloat(fan.targetKey), fan: fan)
-            let manual = (try? smc.readUInt8(fan.modeKey)) == 1
-            readings.append(FanReading(index: fan.index, rpm: rpm, targetRPM: target, manual: manual))
+        if sensors.contains(.fans) {
+            readings.reserveCapacity(fans.count)
+            for fan in fans {
+                let rpm = validRPM(try? smc.readFloat(fan.actualKey), fan: fan)
+                let target = sensors.contains(.fanTargets) ? validRPM(try? smc.readFloat(fan.targetKey), fan: fan) : nil
+                let manual = (try? smc.readUInt8(fan.modeKey)) == 1
+                readings.append(FanReading(index: fan.index, rpm: rpm, targetRPM: target, manual: manual))
+            }
         }
 
-        let battery = SensorCatalog.batteryMean(presentBatteryKeys.compactMap { try? smc.readFloat($0) })
+        let battery = sensors.contains(.battery)
+            ? SensorCatalog.batteryMean(presentBatteryKeys.compactMap { try? smc.readFloat($0) })
+            : nil
         return SensorReading(cpu: cpu, gpu: gpu, battery: battery, fans: readings)
     }
 
