@@ -230,6 +230,9 @@ public final class PopoverViewController: NSViewController {
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        menu.addItem(withTitle: version.map { "OpenFan \($0)" } ?? "OpenFan", action: nil, keyEquivalent: "").isEnabled = false
+        menu.addItem(.separator())
         let page = menu.addItem(
             withTitle: showingSettings ? "Back to Presets" : "Menu Bar Text\u{2026}",
             action: #selector(pageTapped(_:)),
