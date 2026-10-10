@@ -18,10 +18,13 @@ public struct Preset: Codable, Equatable, Identifiable, Sendable {
 
     public var isBuiltIn: Bool { PresetLibrary.builtInIDs.contains(id) }
 
+    /// Full holds both fans at maximum speed whatever the temperature, so the editor shows its note instead of a graph.
+    public var isFullSpeed: Bool { id == PresetLibrary.fullID }
+
     /// What the editor says about the preset it cannot edit; empty for the user's own presets.
     public var editorNote: String {
-        if id == PresetLibrary.fullID {
-            return "Both fans run at maximum speed, whatever the temperature. Duplicate it to make your own curve."
+        if isFullSpeed {
+            return "Full: both fans run at maximum speed.\n" + PresetLibrary.chooseHint
         }
         return isBuiltIn ? "Built-in preset. Duplicate it to make your own curve." : ""
     }
@@ -30,6 +33,9 @@ public struct Preset: Codable, Equatable, Identifiable, Sendable {
 public struct PresetLibrary: Codable, Equatable, Sendable {
     public static let autoID = "auto"
     public static let fullID = "full"
+    static let chooseHint = "Choose a preset above to apply it, or duplicate one to make it yours."
+    /// What the editor says instead of a graph while the fans follow the system.
+    public static let autoNote = "Auto: macOS controls the fans.\n" + chooseHint
     /// Version 2 stores only the user's presets; version 1 also stored copies of the built-ins.
     public static let currentVersion = 2
 
