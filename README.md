@@ -113,6 +113,11 @@ swift run --scratch-path build/scratch CoreCheck
 swift run --scratch-path build/scratch ControlCheck
 ```
 
+## Contributing
+
+Pull requests are welcome, above all for support of other Macs. See [CONTRIBUTING.md](CONTRIBUTING.md) and
+[docs/hardware](docs/hardware/README.md); report security problems as described in [SECURITY.md](SECURITY.md).
+
 ## License
 
 [MIT](LICENSE): free to use, modify, distribute and sell, commercially too.
