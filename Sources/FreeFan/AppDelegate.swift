@@ -63,7 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func installEditMenu() {
         let mainMenu = NSMenu()
         let appItem = NSMenuItem()
-        appItem.submenu = NSMenu()
+        let app = NSMenu()
+        let quitItem = app.addItem(withTitle: "Quit FreeFan", action: #selector(quitFreeFan(_:)), keyEquivalent: "q")
+        quitItem.target = self
+        appItem.submenu = app
         mainMenu.addItem(appItem)
 
         let edit = NSMenu(title: "Edit")
@@ -220,6 +223,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popoverController?.update(snapshot())
     }
 
+    @objc private func quitFreeFan(_ sender: Any?) {
+        quit()
+    }
+
     private func quit() {
         timer?.cancel()
         timer = nil
@@ -229,12 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func dotImage(for level: MemoryPressure) -> NSImage {
         if let cached = dotImages[level] { return cached }
-        let color = level.dotColor
-        let image = NSImage(size: NSSize(width: 9, height: 9), flipped: false) { rect in
-            color.setFill()
-            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
-            return true
-        }
+        let image = level.dotImage()
         image.isTemplate = false
         dotImages[level] = image
         return image
