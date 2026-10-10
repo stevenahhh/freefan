@@ -50,6 +50,18 @@ Hovering the **?** in the footer explains the editor: drag a point to move it, d
 space to add one, right-click a point to remove it, and built-in presets have to be duplicated before
 they can be changed. The **☰** menu next to it installs or uninstalls the helper and quits the app.
 
+## Xcode canvas
+
+The popover is previewable in Xcode's canvas. Open the package (**File ▸ Open…** on `Package.swift`), choose the
+**FreeFan** scheme, open `Sources/FreeFan/Previews.swift` and switch the canvas on with **Editor ▸ Canvas** (a
+**Resume** button appears if the canvas is paused). Three variants are declared: the popover, plus light and dark
+appearances.
+
+The previews build a throwaway store under the temporary directory, so the canvas never reads or writes the real
+`settings.json` / `presets.json`, and the helper is not involved. `#Preview` expands through macro plugins that
+only ship with Xcode, so `scripts/build-app.sh` prefers the Xcode toolchain when it is installed; with only the
+Command Line Tools, remove `Sources/FreeFan/Previews.swift` before building.
+
 ## Layout
 
 | path | what |
