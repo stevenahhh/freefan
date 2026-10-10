@@ -121,6 +121,7 @@ private struct SMCKeyData {
 // data8 selectors
 private let kSMCSelectorReadKeyInfo: UInt8 = 9
 private let kSMCSelectorReadBytes: UInt8 = 5
+private let kSMCSelectorReadIndex: UInt8 = 8
 private let kSMCSelectorWriteBytes: UInt8 = 6
 
 // Four-character-type codes as they arrive in keyInfo.dataType.
@@ -220,6 +221,20 @@ public final class SMC {
 
     public func keyExists(_ key: String) -> Bool {
         (try? keyInfo(key)) != nil
+    }
+
+    /// How many keys this SMC lists (`#KEY`).
+    public func keyCount() throws -> Int {
+        Int(try readUInt32("#KEY"))
+    }
+
+    /// The name of the key at `index` in the SMC's own listing, for finding the sensors of a machine that is not
+    /// catalogued yet.
+    public func key(at index: Int) throws -> String {
+        var input = SMCKeyData()
+        input.data8 = kSMCSelectorReadIndex
+        input.data32 = UInt32(index)
+        return fourCCString(try rawCall(&input).key)
     }
 
     public func readFloat(_ key: String) throws -> Float {
