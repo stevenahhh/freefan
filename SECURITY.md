@@ -1,6 +1,6 @@
 # Security policy
 
-FreeFan includes a helper that runs as root and writes to the SMC on behalf of the logged-in user, so security
+OpenFan includes a helper that runs as root and writes to the SMC on behalf of the logged-in user, so security
 reports matter here.
 
 ## Reporting
@@ -15,7 +15,7 @@ it can be verified, but there is no guaranteed timeline.
 ## What counts
 
 - Anyone other than root and the installing user being able to talk to the helper (the peer-uid check in
-  `Sources/FreeFanHelper/SocketServer.swift`).
+  `Sources/OpenFanHelper/SocketServer.swift`).
 - Any way to make the helper write an SMC value outside the guarded set (`F{n}Tg` within `[Mn, Mx]`, `F{n}md`), or to
   leave a fan under manual control after its client is gone.
 - Anything that turns the installer (`scripts/install-helper.sh`, or **Install Helper** in the app) into a privilege

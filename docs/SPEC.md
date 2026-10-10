@@ -1,4 +1,4 @@
-# FreeFan 구현 스펙
+# OpenFan 구현 스펙
 
 질의: 이 맥(MacBook Pro Mac17,9, Apple M5 Pro, macOS 27.0.1)에서 직접 만든 메뉴바 앱으로 온도와 팬 속도를 실시간으로 보여 주고, 그래프로 그린 커브로 팬을 제어하고, 프리셋을 저장하고 바로 바꿀 수 있게 하면서 연산량을 거의 쓰지 않으려면 어떻게 구현해야 하는가.
 
@@ -51,9 +51,9 @@ M5 Pro에서도 팬 제어가 가능하다. 이 맥에서 root 권한으로 직�
 결정: 레거시 LaunchDaemon과 Unix 도메인 소켓을 쓰고, `getpeereid`로 uid를 검사한다.
 
 - SMAppService.daemon은 쓰지 않는다. macOS 27 SDK `SMAppService.h`에 "Apps that contain LaunchDaemons must be notarized"라고 적혀 있다. 같은 헤더에 레거시 `/Library/LaunchDaemons`는 승인 없이 부팅된다는 문구도 있다 [A4]. 2026년 포럼에는 공증 없는 SMAppService 데몬이 AMFI -413으로 막혔다는 보고가 있고 [Source 43], macOS 27에서 일반 LaunchDaemon이 동작했다는 보고도 있다 [Source 44].
-- 설치: 팝오버 아래쪽의 "Install Helper…"를 누르면 `osascript … with administrator privileges`로 관리자 암호를 한 번 묻는다. 헬퍼 바이너리는 `/Library/PrivilegedHelperTools/com.stevenahhh.freefan.helper`(root:wheel 0755), plist는 `/Library/LaunchDaemons/com.stevenahhh.freefan.helper.plist`(root:wheel 0644)에 놓고 `launchctl bootstrap system`으로 로드한다. 제거할 때는 `launchctl bootout system/com.stevenahhh.freefan.helper` 후 두 파일을 지운다 [A4][Source 39].
+- 설치: 팝오버 아래쪽의 "Install Helper…"를 누르면 `osascript … with administrator privileges`로 관리자 암호를 한 번 묻는다. 헬퍼 바이너리는 `/Library/PrivilegedHelperTools/com.stevenahhh.openfan.helper`(root:wheel 0755), plist는 `/Library/LaunchDaemons/com.stevenahhh.openfan.helper.plist`(root:wheel 0644)에 놓고 `launchctl bootstrap system`으로 로드한다. 제거할 때는 `launchctl bootout system/com.stevenahhh.openfan.helper` 후 두 파일을 지운다 [A4][Source 39].
 - 서명: 모든 바이너리는 ad-hoc(`codesign -s -`)으로 서명한다. 서명이 없으면 이 맥에서 실행 즉시 SIGKILL로 종료된다 [A4].
-- IPC: 헬퍼가 `/var/run/com.stevenahhh.freefan.sock`을 만들고 권한을 0666으로 둔다. 대신 연결마다 `getpeereid`로 uid가 {0, 설치 사용자} 중 하나인지 확인하고, 그렇지 않으면 연결을 즉시 끊는다 [Source 32][Source 33][Source 46].
+- IPC: 헬퍼가 `/var/run/com.stevenahhh.openfan.sock`을 만들고 권한을 0666으로 둔다. 대신 연결마다 `getpeereid`로 uid가 {0, 설치 사용자} 중 하나인지 확인하고, 그렇지 않으면 연결을 즉시 끊는다 [Source 32][Source 33][Source 46].
   - XPC 코드 서명 요구사항을 쓸 수도 있다. 하지만 ad-hoc 코드로는 빌드마다 바뀌는 cdhash나 위조할 수 있는 identifier만 지정할 수 있다 [Source 45][A2]. 자체 서명한 인증서로 안정적인 요구사항을 만들 수 있다는 것도 확인했다 [A4]. 다만 그러려면 키체인에 인증서를 따로 만들어야 한다. uid 검사는 서명 인프라 없이도 같은 수준의 경계를 제공한다. 같은 uid의 프로세스는 어차피 앱 자체를 조작할 수 있다. 게다가 헬퍼는 팬을 [Mn, Mx] 범위 밖으로 설정하지 않으므로, 오용되어도 최악의 경우 소음이 커지는 정도다.
 - 프로토콜: 한 줄에 명령 하나를 보내는 텍스트 방식이다. `PING`, `STATUS`, `AUTO`, `CURVE <max|cpu|gpu|battery> t:p,…`, `FIXED <percent>`. `battery`는 TB0T/TB1T/TB2T 중 유효한 센서의 평균이다. NaN이나 범위 밖 숫자는 거부한다. 점은 2~12개여야 하고(ASSUMED: 편집기 조작성을 기준으로 함), 온도는 순증가(strictly increasing)해야 한다.
 
@@ -91,7 +91,7 @@ M5 Pro에서도 팬 제어가 가능하다. 이 맥에서 root 권한으로 직�
 - 커브는 구간별 선형(piecewise linear)이다. 점은 2~12개이고, x는 순증가, y는 감소하지 않는다. 첫 점보다 낮은 온도에는 첫 점의 값을, 마지막 점보다 높은 온도에는 마지막 점의 값을 쓴다 [Source 49][A7].
 - y축은 `[Mn, Mx]`에 대한 퍼센트다. `rpm = Mn + p/100 × (Mx − Mn)`이고, Mac17,9에서는 `2317 + p × 55.09`다 [A7].
 - 편집기 조작: 점을 끌어 옮기고, 빈 곳을 더블클릭하면 점을 추가하고, 점을 우클릭하면 삭제한다. 끌어 옮기는 동안 1°C/1% 단위로 스냅된다. 그래프 위에 현재 온도와 RPM이 점으로 표시된다 [Source 49][Source 50].
-- 저장: `~/Library/Application Support/FreeFan/presets.json`에 `{ "version": 2, "active": "<id|auto>", "presets": [ { "id", "name", "input": "max|cpu|gpu|battery", "points": [[t, p], …] } ] }` 형태로 쓴다. "Auto"는 프리셋이 아니라 별도 모드이고, `md=0`이다 [A7 수정본]. **version 2는 사용자 프리셋만 저장한다**: 기본 프리셋은 코드가 소유하고 편집·이름 변경·삭제가 모두 거부된다. version 1 파일은 로드 시 이전된다(그대로인 기본 프리셋 사본은 버리고, 사용자가 고친 사본은 사용자 프리셋으로 옮기며 활성 선택이 그쪽을 따라간다).
+- 저장: `~/Library/Application Support/OpenFan/presets.json`에 `{ "version": 2, "active": "<id|auto>", "presets": [ { "id", "name", "input": "max|cpu|gpu|battery", "points": [[t, p], …] } ] }` 형태로 쓴다. "Auto"는 프리셋이 아니라 별도 모드이고, `md=0`이다 [A7 수정본]. **version 2는 사용자 프리셋만 저장한다**: 기본 프리셋은 코드가 소유하고 편집·이름 변경·삭제가 모두 거부된다. version 1 파일은 로드 시 이전된다(그대로인 기본 프리셋 사본은 버리고, 사용자가 고친 사본은 사용자 프리셋으로 옮기며 활성 선택이 그쪽을 따라간다).
 - 0 %는 "최저 속도"가 아니라 **팬을 macOS로 돌려주는 것**이다: 커브가 0 %를 가리키면 컨트롤러는 그 팬을 릴리스(`md=0`)하고, 0 % 위로 올라오면 목표값을 먼저 쓴 뒤 다시 잡는다. 따라서 `Mn` 아래의 목표값은 결코 쓰지 않고, 시원한 맥에서는 macOS가 팬을 세운다. 95 °C 패닉 가드는 그대로 최고 속도를 강제한다.
 - 메뉴바 템플릿은 빈 문자열도 유효하다(점만 표시). 사용자 프리셋이 하나도 없을 때 새 프리셋은 `30:0, 50:15, 70:45, 95:100`에서 시작한다.
 - 헤더 팬 값은 기본적으로 최고 속도 대비 퍼센트이고, 팬 행을 클릭하면 RPM으로 바뀌며 그 선택은 `settings.json`에 남는다.

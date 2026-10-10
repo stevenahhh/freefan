@@ -1,6 +1,6 @@
 # Supported Macs
 
-FreeFan is verified model by model. A Mac counts as supported when an evidence file for it is merged in this
+OpenFan is verified model by model. A Mac counts as supported when an evidence file for it is merged in this
 folder. Anywhere else it may work, but the helper writes to the SMC on your behalf, so treat it as unverified.
 
 | Model identifier | Chip | macOS | Fans | Evidence | Verified by |
@@ -9,8 +9,8 @@ folder. Anywhere else it may work, but the helper writes to the SMC on your beha
 
 ## How support works
 
-FreeFan does not ship a table of Macs. At launch it asks the SMC which of the catalogued temperature keys exist
-(`SensorCatalog` in `Sources/FreeFanSMC/Sensors.swift`) and reads each fan's real limits (`F{n}Mn`, `F{n}Mx`).
+OpenFan does not ship a table of Macs. At launch it asks the SMC which of the catalogued temperature keys exist
+(`SensorCatalog` in `Sources/OpenFanSMC/Sensors.swift`) and reads each fan's real limits (`F{n}Mn`, `F{n}Mx`).
 To control a fan the helper writes the target speed (`F{n}Tg`) and then switches the fan to manual
 (`F{n}md = 1`); it gives control back with `md = 0`.
 
@@ -21,7 +21,7 @@ temperature keys needs those keys added to the catalogue first (a few lines) and
 
 1. **Branch.** Fork the repository and branch from `main`, for example `hardware/Mac15-3`. One model per pull
    request.
-2. **Probe, read-only.** `swift run --scratch-path build/scratch FreeFanProbe > probe.md`. It writes nothing to the
+2. **Probe, read-only.** `swift run --scratch-path build/scratch OpenFanProbe > probe.md`. It writes nothing to the
    SMC. If it cannot open the SMC, or finds no fans on a Mac that has them, stop and open an issue with its
    output instead of going on.
 3. **Catalogue.** If a group shows `0 of N present`, or the probe lists temperature keys that are clearly CPU or

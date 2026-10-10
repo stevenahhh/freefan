@@ -1,4 +1,4 @@
-# FreeFan
+# OpenFan
 
 Minimal macOS menu-bar fan control for Apple Silicon.
 
@@ -13,13 +13,13 @@ Minimal macOS menu-bar fan control for Apple Silicon.
 
 ```sh
 swift build --scratch-path build/scratch
-bash scripts/build-app.sh          # assembles and ad-hoc signs build/FreeFan.app
-open build/FreeFan.app
+bash scripts/build-app.sh          # assembles and ad-hoc signs build/OpenFan.app
+open build/OpenFan.app
 ```
 
 Then click the menu-bar item and choose **Install Helper…** in the popover footer. That asks for an
 administrator password once and installs a small root daemon
-(`/Library/LaunchDaemons/com.stevenahhh.freefan.helper.plist`) which is the only process that writes
+(`/Library/LaunchDaemons/com.stevenahhh.openfan.helper.plist`) which is the only process that writes
 to the SMC. Uninstall it again from the same place.
 
 The app shows `52° 2.3k` in the menu bar. Clicking it opens a popover with CPU, GPU and battery
@@ -36,7 +36,7 @@ at maximum speed. A curve that reaches its bottom edge hands the fans back to ma
 there), which stops them while the Mac is cool, so letting the fans stop needs no special setting. The graph's
 readouts use the same unit as the fan row, so the speed beside the temperature on the graph is the speed in the
 header. Your own presets live in
-`~/Library/Application Support/FreeFan/presets.json` (version 2 stores only those; an older file is
+`~/Library/Application Support/OpenFan/presets.json` (version 2 stores only those; an older file is
 migrated on load).
 
 **Menu Bar Text…** in the popover footer opens the settings page. The text is a template; click a name
@@ -45,7 +45,7 @@ and GPU), `{cpu}`, `{gpu}`, `{bat}` (battery average), `{rpm}` (fastest fan), `{
 `{preset}`. Anything that is not a name is shown as typed, and at most 40 characters are shown. Leave
 the field empty to show only the pressure dot; the Default button puts the default template back. The
 memory pressure dot can be turned off on the same page. Settings live in
-`~/Library/Application Support/FreeFan/settings.json`; an unreadable file is kept as `settings.json.bak`
+`~/Library/Application Support/OpenFan/settings.json`; an unreadable file is kept as `settings.json.bak`
 and the defaults are used.
 
 Hovering the **?** in the footer explains the editor: drag a point to move it, double-click empty
@@ -54,42 +54,42 @@ they can be changed. The **☰** menu next to it installs or uninstalls the help
 
 ## Supported Macs
 
-FreeFan is verified on one model so far, the MacBook Pro Mac17,9 (Apple M5 Pro). The helper writes to the SMC on
-your behalf, so on any other Mac start with `swift run --scratch-path build/scratch FreeFanProbe`: it only reads,
+OpenFan is verified on one model so far, the MacBook Pro Mac17,9 (Apple M5 Pro). The helper writes to the SMC on
+your behalf, so on any other Mac start with `swift run --scratch-path build/scratch OpenFanProbe`: it only reads,
 and prints your model, fans and sensors. [docs/hardware](docs/hardware/README.md) lists the verified models and
 explains how to add yours.
 
 ## Xcode canvas and preview host
 
 The popover is previewable in Xcode's canvas. Open the package (**File ▸ Open…** on `Package.swift`), open
-`Sources/FreeFanUI/Previews.swift` and switch the canvas on with **Editor ▸ Canvas** (a **Resume** button appears
+`Sources/OpenFanUI/Previews.swift` and switch the canvas on with **Editor ▸ Canvas** (a **Resume** button appears
 if the canvas is paused). Three variants are declared: the popover, plus light and dark appearances.
 
 Previews need the UI in a library target: Xcode refuses to preview an executable target unless the project sets
-`ENABLE_DEBUG_DYLIB`, which a Swift package cannot express, so the popover lives in `FreeFanUI` and the `FreeFan`
+`ENABLE_DEBUG_DYLIB`, which a Swift package cannot express, so the popover lives in `OpenFanUI` and the `OpenFan`
 executable is only the menu bar item and the helper client.
 
-For a plain window rather than the canvas, run the **FreeFanPreview** scheme (⌘R): it hosts the same controller
+For a plain window rather than the canvas, run the **OpenFanPreview** scheme (⌘R): it hosts the same controller
 with sample data, which pairs well with **Debug ▸ View Debugging ▸ Capture View Hierarchy**. Both preview paths
 use a throwaway store under the temporary directory, so they never read or write the real `settings.json` or
 `presets.json`, and neither involves the helper.
 
 `#Preview` expands through macro plugins that only ship with Xcode, so `scripts/build-app.sh` prefers the Xcode
-toolchain when it is installed; with only the Command Line Tools, remove `Sources/FreeFanUI/Previews.swift`
+toolchain when it is installed; with only the Command Line Tools, remove `Sources/OpenFanUI/Previews.swift`
 before building.
 
 ## Layout
 
 | path | what |
 |---|---|
-| `Sources/FreeFanSMC` | AppleSMC access and sensor discovery |
-| `Sources/FreeFanCore` | fan curve, preset store, socket protocol |
-| `Sources/FreeFanControl` | the decision engine (hysteresis, dead band, panic) |
-| `Sources/FreeFanHelper` | the root daemon: socket, lease watchdog, control tick, sleep handling |
-| `Sources/FreeFanUI` | the popover and its views, plus the preview harness |
-| `Sources/FreeFan` | the menu bar app: status item, telemetry, helper client |
-| `Sources/FreeFanPreview` | a window that hosts the popover with sample data |
-| `Sources/FreeFanProbe` | a read-only report of a Mac's SMC: model, fans, sensors |
+| `Sources/OpenFanSMC` | AppleSMC access and sensor discovery |
+| `Sources/OpenFanCore` | fan curve, preset store, socket protocol |
+| `Sources/OpenFanControl` | the decision engine (hysteresis, dead band, panic) |
+| `Sources/OpenFanHelper` | the root daemon: socket, lease watchdog, control tick, sleep handling |
+| `Sources/OpenFanUI` | the popover and its views, plus the preview harness |
+| `Sources/OpenFan` | the menu bar app: status item, telemetry, helper client |
+| `Sources/OpenFanPreview` | a window that hosts the popover with sample data |
+| `Sources/OpenFanProbe` | a read-only report of a Mac's SMC: model, fans, sensors |
 | `Sources/*Check` | executable checks (XCTest is unavailable with Command Line Tools only) |
 | `docs/SPEC.md` | the researched implementation spec |
 | `docs/hardware` | measured evidence per Mac model, and the template for adding yours |
@@ -127,10 +127,10 @@ Pull requests are welcome, above all for support of other Macs. See [CONTRIBUTIN
 There is no warranty, and this software writes to your Mac's SMC through a root helper. Read the safety model above,
 check [docs/hardware](docs/hardware/README.md) to see whether your model has been verified, and use it at your own risk.
 
-FreeFan is source-only. The app is ad-hoc signed and not notarized, so no prebuilt download is published; build it
+OpenFan is source-only. The app is ad-hoc signed and not notarized, so no prebuilt download is published; build it
 yourself as described above.
 
-FreeFan was written from scratch. The AppleSMC protocol and the key names were learned from open-source projects such
+OpenFan was written from scratch. The AppleSMC protocol and the key names were learned from open-source projects such
 as [Stats](https://github.com/exelban/stats), [SMCKit](https://github.com/beltex/SMCKit),
 [fand](https://github.com/yolo-labz/fand) and [fanctl](https://github.com/erogol/fanctl) (all MIT). No code was copied
 from them or from any other project that was read; that was checked line by line.
