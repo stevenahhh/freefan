@@ -53,8 +53,8 @@ final class CurveEditorPanel: NSView {
         render()
     }
 
-    func updateLive(temperature: Float?, rpm: Float?, fanMaxRPM: Float?) {
-        graph.setLive(temperature: temperature, actualRPM: rpm, fanMaxRPM: fanMaxRPM)
+    func updateLive(temperature: Float?, speed: FanSpeedFormat) {
+        graph.setLive(temperature: temperature, speed: speed)
     }
 
     func report(_ message: String) {

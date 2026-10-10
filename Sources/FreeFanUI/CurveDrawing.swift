@@ -8,6 +8,7 @@ struct CurveDrawing {
     var isEditable: Bool
     var dragIndex: Int?
     var hoverIndex: Int?
+    var speed: FanSpeedFormat
 
     func draw() {
         let plot = mapping.rect
@@ -158,7 +159,7 @@ struct CurveDrawing {
     private func drawDragReadout(in plot: NSRect) {
         guard let index = dragIndex, points.indices.contains(index) else { return }
         let point = points[index]
-        let lines = [String(format: "%.0f\u{00B0}C", point.t), String(format: "%.0f%%", point.p)]
+        let lines = [String(format: "%.0f\u{00B0}C", point.t), speed.text(forCurvePercent: point.p)]
         let size = CurvePill.size(for: lines)
         let center = mapping.point(t: point.t, p: point.p)
         // Prefer up and to the right of the dot; flip to the other side near the plot edges.
