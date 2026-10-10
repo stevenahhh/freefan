@@ -176,7 +176,9 @@ public final class PopoverViewController: NSViewController {
         header.update(readout)
         footer.update(pressure: snapshot.pressure)
 
-        settingsPanel.update(values: MenuBarValues(reading: snapshot.reading, presetName: store.library.activePreset?.name ?? "Auto"))
+        if showingSettings {
+            settingsPanel.update(values: MenuBarValues(reading: snapshot.reading, presetName: store.library.activePreset?.name ?? "Auto"))
+        }
 
         let temperature = editor.activeInput.flatMap { snapshot.reading?.input($0) }
         editor.updateLive(
@@ -263,6 +265,7 @@ public final class PopoverViewController: NSViewController {
         footer.dismissHelp()
         editor.isHidden = showingSettings
         settingsPanel.isHidden = !showingSettings
+        refreshHeader()
         resize()
     }
 
