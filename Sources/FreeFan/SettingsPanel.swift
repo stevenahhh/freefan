@@ -36,6 +36,11 @@ final class SettingsPanel: NSView, NSTextFieldDelegate {
 
     func update(values: MenuBarValues) {
         self.values = values
+        // The field follows the stored template whenever the user is not editing it, so a stray end-editing can never
+        // commit a stale or empty string over it.
+        if field.currentEditor() == nil, field.stringValue != settings.settings.menuBarTemplate {
+            field.stringValue = settings.settings.menuBarTemplate
+        }
         refreshPreview()
     }
 

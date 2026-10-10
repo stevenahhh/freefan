@@ -2,7 +2,7 @@ import AppKit
 import FreeFanCore
 import FreeFanSMC
 
-final class CurveEditorPanel: NSView, NSTextFieldDelegate {
+final class CurveEditorPanel: NSView {
     var onLibraryChange: (() -> Void)?
 
     var activeInput: FanControlInput? { draft?.input }
@@ -16,22 +16,18 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
         }
     }
 
-    private static let starterPoints = [
-        CurvePoint(t: 40, p: 10),
-        CurvePoint(t: 60, p: 30),
-        CurvePoint(t: 80, p: 60),
-        CurvePoint(t: 95, p: 100),
-    ]
-
     private let store: PresetStore
     private let graph = CurveEditorView(frame: .zero)
-    private let nameField = NSTextField(string: "")
+    private let nameEditor = PresetNameEditor()
     private let inputPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let duplicateButton = NSButton(title: "Duplicate", target: nil, action: nil)
     private let deleteButton = NSButton(title: "Delete", target: nil, action: nil)
-    private let hintLabel = NSTextField(wrappingLabelWithString: "")
+    private let noteLabel = NSTextField(wrappingLabelWithString: "")
     private let errorLabel = NSTextField(labelWithString: "")
-    private let placeholder = NSTextField(wrappingLabelWithString: "Auto: macOS controls the fans.\nPick a preset above to apply it and edit its curve here.")
+    private let placeholder = NSTextField(wrappingLabelWithString: """
+        Auto: macOS controls the fans.
+        Choose a preset above to apply it, or duplicate one to make it yours.
+        """)
     private let editorStack = NSStackView()
 
     private var draft: Preset?
@@ -51,6 +47,7 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
     func showActive() {
         lastError = nil
         deleteArmed = false
+        nameEditor.endEditing()
         draft = store.library.activePreset
         render()
     }
@@ -61,16 +58,11 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
 
     func report(_ message: String) {
         lastError = message
-        refreshLabels()
+        refreshError()
     }
 
     func addPreset(copying source: Preset?) {
-        let preset = Preset(
-            id: uniqueID(),
-            name: uniqueName(base: source.map { "\($0.name) Copy" } ?? "New Preset"),
-            input: source?.input ?? .max,
-            points: source?.points ?? Self.starterPoints
-        )
+        let preset = store.library.newCustomPreset(copying: source)
         do {
             try store.upsert(preset)
             try store.setActive(preset.id)
@@ -82,12 +74,8 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
         deleteArmed = false
         draft = preset
         render()
+        nameEditor.beginEditing()
         onLibraryChange?()
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.window?.makeFirstResponder(self.nameField)
-            self.nameField.selectText(nil)
-        }
     }
 
     private func configure(width: CGFloat) {
@@ -95,12 +83,8 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
         graph.onCommit = { [weak self] points in self?.graphCommitted(points) }
         graph.heightAnchor.constraint(equalToConstant: 200).isActive = true
 
-        nameField.placeholderString = "Preset name"
-        nameField.delegate = self
-        nameField.target = self
-        nameField.action = #selector(nameCommitted(_:))
-        nameField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        nameField.setAccessibilityLabel("Preset name")
+        nameEditor.onCommit = { [weak self] name in self?.commitName(name) }
+        nameEditor.onError = { [weak self] message in self?.fail(message) }
 
         for input in FanControlInput.allCases {
             inputPopup.addItem(withTitle: Self.title(for: input))
@@ -119,9 +103,9 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
             button.bezelStyle = .rounded
         }
 
-        hintLabel.font = .systemFont(ofSize: 10)
-        hintLabel.textColor = .secondaryLabelColor
-        hintLabel.preferredMaxLayoutWidth = width
+        noteLabel.font = .systemFont(ofSize: 10)
+        noteLabel.textColor = .secondaryLabelColor
+        noteLabel.preferredMaxLayoutWidth = width
         errorLabel.font = .systemFont(ofSize: 11)
         errorLabel.textColor = .systemRed
         placeholder.font = .systemFont(ofSize: 12)
@@ -129,7 +113,8 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
         placeholder.alignment = .center
         placeholder.preferredMaxLayoutWidth = width
 
-        let nameRow = NSStackView(views: [nameField, inputPopup])
+        nameEditor.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let nameRow = NSStackView(views: [nameEditor, inputPopup])
         nameRow.orientation = .horizontal
         nameRow.spacing = 8
         nameRow.alignment = .centerY
@@ -141,7 +126,7 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
         buttonRow.spacing = 8
         buttonRow.alignment = .centerY
 
-        let rows: [NSView] = [graph, nameRow, buttonRow, hintLabel, errorLabel]
+        let rows: [NSView] = [graph, nameRow, buttonRow, noteLabel, errorLabel]
         editorStack.setViews(rows, in: .top)
         editorStack.orientation = .vertical
         editorStack.alignment = .leading
@@ -173,16 +158,24 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
         }
         editorStack.isHidden = false
         placeholder.isHidden = true
-        if nameField.currentEditor() == nil, nameField.stringValue != draft.name {
-            nameField.stringValue = draft.name
-        }
+
+        let builtIn = draft.isBuiltIn
+        graph.isEditable = !builtIn
+        graph.setPoints(draft.points)
+        nameEditor.set(name: draft.name, isBuiltIn: builtIn)
+        inputPopup.isEnabled = !builtIn
+        inputPopup.toolTip = builtIn ? "Built-in presets keep this setting" : "Temperature the curve follows"
         if let index = FanControlInput.allCases.firstIndex(of: draft.input), inputPopup.indexOfSelectedItem != index {
             inputPopup.selectItem(at: index)
         }
-        graph.setPoints(draft.points)
-        deleteButton.isEnabled = store.library.presets.count > 1
+        duplicateButton.title = builtIn ? "Duplicate to Edit" : "Duplicate"
+        deleteButton.isHidden = builtIn
         updateDeleteTitle()
-        refreshLabels()
+
+        let note = draft.editorNote
+        if noteLabel.stringValue != note { noteLabel.stringValue = note }
+        noteLabel.isHidden = note.isEmpty
+        refreshError()
     }
 
     private func updateDeleteTitle() {
@@ -191,26 +184,12 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
         deleteButton.contentTintColor = deleteArmed ? .systemRed : nil
     }
 
-    private func refreshLabels() {
-        var hint = "Drag a point to move it, double-click empty space to add one, right-click a point to remove it."
-        if let input = draft?.input, input != .max {
-            hint += " CPU or GPU at 95 \u{00B0}C or above still forces full speed."
-        }
-        if hintLabel.stringValue != hint { hintLabel.stringValue = hint }
+    private func refreshError() {
         let message = lastError ?? ""
         if errorLabel.stringValue != message { errorLabel.stringValue = message }
     }
 
-    private func commit() {
-        guard var preset = draft else { return }
-        preset.name = preset.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !preset.name.isEmpty else {
-            let stored = store.library.preset(id: preset.id)?.name ?? ""
-            draft?.name = stored
-            nameField.stringValue = stored
-            fail("Name cannot be empty")
-            return
-        }
+    private func apply(_ preset: Preset) {
         do {
             try preset.curve.validate()
         } catch {
@@ -219,6 +198,7 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
         }
         guard preset != store.library.preset(id: preset.id) else {
             draft = preset
+            render()
             return
         }
         do {
@@ -229,14 +209,15 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
         }
         draft = preset
         lastError = nil
+        render()
         onLibraryChange?()
-        refreshLabels()
     }
 
     private func fail(_ message: String) {
         lastError = message
         NSSound.beep()
-        refreshLabels()
+        refreshError()
+        nameEditor.keepEditing()
     }
 
     private func disarmDelete() {
@@ -250,33 +231,27 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
         draft?.points = points
         lastError = nil
         disarmDelete()
-        refreshLabels()
+        refreshError()
     }
 
     private func graphCommitted(_ points: [CurvePoint]) {
-        guard draft != nil else { return }
-        draft?.points = points
-        commit()
+        guard var draft else { return }
+        draft.points = points
+        apply(draft)
     }
 
-    @objc private func nameCommitted(_ sender: Any?) {
-        guard draft != nil else { return }
-        draft?.name = nameField.stringValue
-        disarmDelete()
-        commit()
-    }
-
-    func controlTextDidEndEditing(_ notification: Notification) {
-        nameCommitted(nil)
+    private func commitName(_ name: String) {
+        guard var draft else { return }
+        draft.name = name
+        apply(draft)
     }
 
     @objc private func inputChanged(_ sender: Any?) {
         let index = inputPopup.indexOfSelectedItem
-        guard draft != nil, FanControlInput.allCases.indices.contains(index) else { return }
-        draft?.input = FanControlInput.allCases[index]
+        guard var draft, FanControlInput.allCases.indices.contains(index) else { return }
+        draft.input = FanControlInput.allCases[index]
         disarmDelete()
-        commit()
-        render()
+        apply(draft)
     }
 
     @objc private func duplicateTapped(_ sender: Any?) {
@@ -284,47 +259,23 @@ final class CurveEditorPanel: NSView, NSTextFieldDelegate {
     }
 
     @objc private func deleteTapped(_ sender: Any?) {
-        guard let preset = draft, store.library.presets.count > 1 else { return }
+        guard let preset = draft, !preset.isBuiltIn else { return }
         guard deleteArmed else {
             deleteArmed = true
             updateDeleteTitle()
             return
         }
-        let before = store.library.presets
-        let index = before.firstIndex { $0.id == preset.id } ?? 0
         do {
             try store.remove(id: preset.id)
-            let remaining = store.library.presets
-            if let next = remaining.indices.contains(index) ? remaining[index] : remaining.last {
-                try store.setActive(next.id)
-            }
         } catch {
             fail("Delete failed: \(error.localizedDescription)")
             return
         }
         deleteArmed = false
         lastError = nil
+        nameEditor.endEditing()
         draft = store.library.activePreset
         render()
         onLibraryChange?()
-    }
-
-    private func uniqueID() -> String {
-        let existing = Set(store.library.presets.map(\.id))
-        var number = existing.count + 1
-        while existing.contains("custom-\(number)") || "custom-\(number)" == PresetLibrary.autoID {
-            number += 1
-        }
-        return "custom-\(number)"
-    }
-
-    private func uniqueName(base: String) -> String {
-        let existing = Set(store.library.presets.map(\.name))
-        if !existing.contains(base) { return base }
-        var number = 2
-        while existing.contains("\(base) \(number)") {
-            number += 1
-        }
-        return "\(base) \(number)"
     }
 }

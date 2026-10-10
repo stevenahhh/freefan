@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import FreeFanCore
 import FreeFanSMC
 
@@ -32,22 +33,32 @@ final class PopoverViewController: NSViewController {
     var onPreferredSizeChange: ((NSSize) -> Void)?
 
     private let store: PresetStore
+    private let settings: SettingsStore
     private let actions: PopoverActions
-    private let header = TelemetryHeaderView(width: Layout.inner)
-    private let chips = PresetChipsView(width: Layout.inner)
+    private let headerModel = HeaderModel()
+    private lazy var header = NSHostingView(rootView: HeaderContent(model: headerModel))
+    private let warningLabel = NSTextField(wrappingLabelWithString: "")
+    private let slider = PresetSliderView(width: Layout.inner)
     private let editor: CurveEditorPanel
     private let settingsPanel: SettingsPanel
-    private let helperButton = NSButton(title: "", target: nil, action: nil)
-    private let pageButton = NSButton(title: "", target: nil, action: nil)
+    let footer = PopoverFooter(width: Layout.inner)
+    let helpBubble = HelpBubbleView()
     private var snapshot: LiveSnapshot?
-    private var showingSettings = false
+    private(set) var showingSettings = false
 
     init(store: PresetStore, settings: SettingsStore, actions: PopoverActions) {
         self.store = store
+        self.settings = settings
         self.actions = actions
         self.editor = CurveEditorPanel(store: store, width: Layout.inner)
         self.settingsPanel = SettingsPanel(settings: settings, width: Layout.inner)
         super.init(nibName: nil, bundle: nil)
+        headerModel.showsRPM = settings.settings.fanUnitsRPM
+        headerModel.onUnitsChanged = { [weak self] showsRPM in
+            guard let self else { return }
+            self.settings.setFanUnitsRPM(showsRPM)
+            self.saveSettings()
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -55,43 +66,39 @@ final class PopoverViewController: NSViewController {
     }
 
     override func loadView() {
-        chips.onSelect = { [weak self] id in self?.select(id) }
-        chips.onNew = { [weak self] in
+        slider.onSelect = { [weak self] id in self?.select(id) }
+        slider.onNew = { [weak self] in
             guard let self else { return }
             self.editor.addPreset(copying: self.store.library.activePreset)
         }
         editor.onLibraryChange = { [weak self] in self?.libraryChanged() }
         settingsPanel.onChange = { [weak self] in self?.actions.settingsChanged() }
         settingsPanel.isHidden = true
-
-        helperButton.target = self
-        helperButton.action = #selector(helperTapped(_:))
-        pageButton.target = self
-        pageButton.action = #selector(pageTapped(_:))
-        updatePageButton()
-        let quitButton = NSButton(title: "Quit FreeFan", target: self, action: #selector(quitTapped(_:)))
-        quitButton.keyEquivalent = "q"
-        quitButton.keyEquivalentModifierMask = .command
-        for button in [helperButton, pageButton, quitButton] {
-            button.isBordered = false
-            button.font = .systemFont(ofSize: 11)
-            button.contentTintColor = .secondaryLabelColor
+        footer.menuProvider = { [weak self] in self?.buildMenu() ?? NSMenu() }
+        footer.onHelpChange = { [weak self] shown in
+            if shown {
+                self?.showHelpBubble()
+            } else {
+                self?.helpBubble.isHidden = true
+            }
         }
+        helpBubble.isHidden = true
 
-        let spacer = NSView()
-        spacer.setContentHuggingPriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
-        let footer = NSStackView(views: [helperButton, pageButton, spacer, quitButton])
-        footer.orientation = .horizontal
-        footer.spacing = 14
+        warningLabel.font = .systemFont(ofSize: 11)
+        warningLabel.textColor = .systemOrange
+        warningLabel.preferredMaxLayoutWidth = Layout.inner
+        warningLabel.isHidden = true
 
         let separator = NSBox()
         separator.boxType = .separator
 
-        let sections: [NSView] = [header, chips, editor, settingsPanel, separator, footer]
+        let sections: [NSView] = [header, warningLabel, slider, editor, settingsPanel, separator, footer]
         let stack = NSStackView(views: sections)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
+        stack.setCustomSpacing(8, after: header)
+        stack.setCustomSpacing(8, after: warningLabel)
         stack.edgeInsets = NSEdgeInsets(top: Layout.margin, left: Layout.margin, bottom: 12, right: Layout.margin)
         stack.translatesAutoresizingMaskIntoConstraints = false
         for section in sections {
@@ -109,7 +116,7 @@ final class PopoverViewController: NSViewController {
         ])
         view = root
 
-        chips.reload(library: store.library)
+        slider.reload(library: store.library)
         editor.showActive()
         resize()
     }
@@ -119,14 +126,23 @@ final class PopoverViewController: NSViewController {
         view.window?.makeFirstResponder(nil)
     }
 
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        footer.dismissHelp()
+    }
+
     func update(_ snapshot: LiveSnapshot) {
         guard isViewLoaded else { return }
         self.snapshot = snapshot
-        let description = modeDescription(for: snapshot)
-        header.update(snapshot, mode: description.text, isWarning: description.warning)
 
-        let title = snapshot.helperInstalled ? "Uninstall Helper\u{2026}" : "Install Helper\u{2026}"
-        if helperButton.title != title { helperButton.title = title }
+        let warning = warning(for: snapshot)
+        let text = warning ?? ""
+        if warningLabel.stringValue != text { warningLabel.stringValue = text }
+        warningLabel.isHidden = warning == nil
+
+        let readout = HeaderReadout(reading: snapshot.reading, fans: snapshot.fans)
+        if headerModel.readout != readout { headerModel.readout = readout }
+        footer.update(pressure: snapshot.pressure)
 
         settingsPanel.update(values: MenuBarValues(reading: snapshot.reading, presetName: store.library.activePreset?.name ?? "Auto"))
 
@@ -152,6 +168,15 @@ final class PopoverViewController: NSViewController {
         if let snapshot { update(snapshot) }
     }
 
+    private func saveSettings() {
+        do {
+            try settings.save()
+            actions.settingsChanged()
+        } catch {
+            editor.report("Not saved: \(error.localizedDescription)")
+        }
+    }
+
     private func select(_ id: String) {
         do {
             try store.setActive(id)
@@ -159,16 +184,37 @@ final class PopoverViewController: NSViewController {
             editor.report("Save failed: \(error.localizedDescription)")
         }
         editor.showActive()
-        chips.reload(library: store.library)
+        slider.reload(library: store.library)
+        actions.presetsChanged()
+        refreshHeader()
+        resize()
+    }
+
+    private func libraryChanged() {
+        slider.reload(library: store.library)
+        resize()
         actions.presetsChanged()
         refreshHeader()
     }
 
-    private func libraryChanged() {
-        chips.reload(library: store.library)
-        resize()
-        actions.presetsChanged()
-        refreshHeader()
+    private func buildMenu() -> NSMenu {
+        let menu = NSMenu()
+        let page = menu.addItem(
+            withTitle: showingSettings ? "Back to Presets" : "Menu Bar Text\u{2026}",
+            action: #selector(pageTapped(_:)),
+            keyEquivalent: ""
+        )
+        page.target = self
+        let helper = menu.addItem(
+            withTitle: snapshot?.helperInstalled == true ? "Uninstall Helper\u{2026}" : "Install Helper\u{2026}",
+            action: #selector(helperTapped(_:)),
+            keyEquivalent: ""
+        )
+        helper.target = self
+        menu.addItem(.separator())
+        let quit = menu.addItem(withTitle: "Quit FreeFan", action: #selector(quitTapped(_:)), keyEquivalent: "q")
+        quit.target = self
+        return menu
     }
 
     @objc private func helperTapped(_ sender: Any?) {
@@ -182,48 +228,34 @@ final class PopoverViewController: NSViewController {
     @objc private func pageTapped(_ sender: Any?) {
         showingSettings.toggle()
         view.window?.makeFirstResponder(nil)
-        chips.isHidden = showingSettings
+        footer.dismissHelp()
+        slider.isHidden = showingSettings
         editor.isHidden = showingSettings
         settingsPanel.isHidden = !showingSettings
-        updatePageButton()
         resize()
-    }
-
-    private func updatePageButton() {
-        let title = showingSettings ? "Back to Presets" : "Menu Bar Text\u{2026}"
-        let symbol = showingSettings ? "chevron.backward" : "textformat"
-        if pageButton.title != title { pageButton.title = title }
-        pageButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        pageButton.imagePosition = .imageLeading
     }
 
     @objc private func quitTapped(_ sender: Any?) {
         actions.quit()
     }
 
-    private func modeDescription(for snapshot: LiveSnapshot) -> (text: String, warning: Bool) {
+    private func warning(for snapshot: LiveSnapshot) -> String? {
         if !snapshot.helperInstalled {
-            return ("Helper not installed. Fans stay on Auto until you install it below.", true)
+            return "Helper not installed. Fans stay on Auto until you install it from the menu."
         }
         if !snapshot.helperConnected {
-            return ("Helper not responding. Reconnecting\u{2026}", true)
+            return "Helper not responding. Reconnecting\u{2026}"
         }
         if let error = snapshot.helperError, !error.isEmpty {
-            return ("Helper: \(error)", true)
+            return "Helper: \(error)"
         }
-        let library = store.library
         switch snapshot.helperStatus?.mode {
-        case .curve?, .fixed?:
-            let name = library.activePreset?.name ?? "Custom"
-            let input = library.activePreset.map { CurveEditorPanel.title(for: $0.input) } ?? ""
-            return ("\(name): fan curve on \(input)", false)
         case .panic?:
-            return ("Panic: CPU or GPU at 95 \u{00B0}C or above, fans at full speed.", true)
+            return "Panic: a temperature reached 95 \u{00B0}C, fans at full speed."
         case .monitor?:
-            return ("Helper stopped controlling the fans (\(snapshot.helperStatus?.error ?? "write failed")).", true)
-        case .auto?, nil:
-            if library.active == PresetLibrary.autoID { return ("Auto: macOS controls the fans.", false) }
-            return ("Applying \(library.activePreset?.name ?? "preset")\u{2026}", false)
+            return "Helper stopped controlling the fans (\(snapshot.helperStatus?.error ?? "write failed"))."
+        default:
+            return nil
         }
     }
 
