@@ -50,6 +50,13 @@ Hovering the **?** in the footer explains the editor: drag a point to move it, d
 space to add one, right-click a point to remove it, and built-in presets have to be duplicated before
 they can be changed. The **☰** menu next to it installs or uninstalls the helper and quits the app.
 
+## Supported Macs
+
+FreeFan is verified on one model so far, the MacBook Pro Mac17,9 (Apple M5 Pro). The helper writes to the SMC on
+your behalf, so on any other Mac start with `swift run --scratch-path build/scratch FreeFanProbe`: it only reads,
+and prints your model, fans and sensors. [docs/hardware](docs/hardware/README.md) lists the verified models and
+explains how to add yours.
+
 ## Xcode canvas and preview host
 
 The popover is previewable in Xcode's canvas. Open the package (**File ▸ Open…** on `Package.swift`), open
@@ -80,9 +87,10 @@ before building.
 | `Sources/FreeFanUI` | the popover and its views, plus the preview harness |
 | `Sources/FreeFan` | the menu bar app: status item, telemetry, helper client |
 | `Sources/FreeFanPreview` | a window that hosts the popover with sample data |
+| `Sources/FreeFanProbe` | a read-only report of a Mac's SMC: model, fans, sensors |
 | `Sources/*Check` | executable checks (XCTest is unavailable with Command Line Tools only) |
 | `docs/SPEC.md` | the researched implementation spec |
-| `docs/HARDWARE-VERIFICATION.md` | measured evidence on the target machine |
+| `docs/hardware` | measured evidence per Mac model, and the template for adding yours |
 
 ## Safety model
 
