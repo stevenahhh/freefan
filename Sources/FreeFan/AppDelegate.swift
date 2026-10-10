@@ -133,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let isOpen = popover?.isShown == true
         let sensors = isOpen ? Self.popoverSensors : menuBarSensors
         guard isOpen || !sensors.isEmpty else {
-            if helper.isControlling { helper.keepAlive() }
+            helper.keepAlive()
             return
         }
         smcQueue.async { [weak self] in
@@ -141,7 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let reading = self.telemetry?.read(sensors)
             let fans = self.telemetry?.fans ?? []
             if isOpen { _ = self.helper.refreshStatus() }
-            if self.helper.isControlling { self.helper.keepAlive() }
+            self.helper.keepAlive()
             DispatchQueue.main.async {
                 self.apply(reading: reading, fans: fans)
             }
