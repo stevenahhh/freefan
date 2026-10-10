@@ -12,7 +12,6 @@ final class HelperClient {
 
     private let lock = NSLock()
     private var connectedFlag = false
-    private var controllingFlag = false
     private var lastStatusValue: HelperStatus?
     private var lastErrorValue: String?
 
@@ -35,12 +34,6 @@ final class HelperClient {
     var isConnected: Bool {
         lock.lock(); defer { lock.unlock() }
         return connectedFlag
-    }
-
-    /// True while this client holds the helper lease: a curve was sent and the link is up.
-    var isControlling: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return connectedFlag && controllingFlag
     }
 
     var lastStatus: HelperStatus? {
@@ -76,7 +69,6 @@ final class HelperClient {
     func setCurve(_ preset: Preset) {
         queue.async { [self] in
             desiredPreset = preset
-            setControlling(true)
             guard openIfNeeded() else { return }
             recordReply(transact(HelperCommand.curve(input: preset.input, points: preset.points).serialized))
         }
@@ -85,7 +77,6 @@ final class HelperClient {
     func setAuto() {
         queue.async { [self] in
             desiredPreset = nil
-            setControlling(false)
             guard openIfNeeded() else { return }
             recordReply(transact(HelperCommand.auto.serialized))
         }
@@ -103,7 +94,8 @@ final class HelperClient {
         }
     }
 
-    /// Sends PING to keep the helper lease fresh. Only does work while a curve is applied.
+    /// Sends PING to keep the helper lease fresh. Does nothing unless a curve is wanted; when the link has dropped (the
+    /// helper restarted, say) it reconnects, with backoff, and sends the curve again.
     func keepAlive() {
         queue.async { [self] in
             guard desiredPreset != nil, openIfNeeded() else { return }
@@ -231,10 +223,6 @@ final class HelperClient {
 
     private func setConnected(_ value: Bool) {
         lock.lock(); connectedFlag = value; lock.unlock()
-    }
-
-    private func setControlling(_ value: Bool) {
-        lock.lock(); controllingFlag = value; lock.unlock()
     }
 
     private func recordReply(_ reply: String?) {
