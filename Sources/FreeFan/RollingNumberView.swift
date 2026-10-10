@@ -1,13 +1,19 @@
 import AppKit
 
-/// A large number whose changed characters slide in vertically, like the system's numeric text transition. It is
-/// built from layers so an update redraws nothing, and stays in AppKit so the app links no UI framework for it.
+/// A large number whose changed characters roll, like the system's numeric text transition: the old glyph slides out
+/// while the new one slides in, both fully opaque and clipped to the row. It is built from layers so an update
+/// redraws nothing, and stays in AppKit so the app links no UI framework for it.
 final class RollingNumberView: NSView {
-    private static let duration: CFTimeInterval = 0.22
+    private static let duration: CFTimeInterval = 0.32
+
+    private final class DigitCell {
+        let current = CATextLayer()
+        let outgoing = CATextLayer()
+    }
 
     private let font: NSFont
     private var text = ""
-    private var cells: [CATextLayer] = []
+    private var cells: [DigitCell] = []
     private var widths: [CGFloat] = []
 
     init(font: NSFont) {
@@ -30,13 +36,18 @@ final class RollingNumberView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         let color = Self.labelColor(for: effectiveAppearance)
-        cells.forEach { $0.foregroundColor = color }
+        cells.forEach { cell in
+            cell.current.foregroundColor = color
+            cell.outgoing.foregroundColor = color
+        }
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        let scale = window?.backingScaleFactor ?? 2
-        cells.forEach { $0.contentsScale = scale }
+        cells.forEach { cell in
+            cell.current.contentsScale = window?.backingScaleFactor ?? 2
+            cell.outgoing.contentsScale = window?.backingScaleFactor ?? 2
+        }
         layoutCells()
     }
 
@@ -49,25 +60,40 @@ final class RollingNumberView: NSView {
         guard newText != text else { return }
         let old = Array(text)
         let new = Array(newText)
-        let rising = Self.number(in: newText) >= Self.number(in: text)
+        let rising = Self.number(in: newText) > Self.number(in: text)
         text = newText
         setAccessibilityLabel(newText)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        CATransaction.setCompletionBlock { [weak self] in self?.finishRoll() }
         resize(count: new.count)
         for (index, character) in new.enumerated() {
             let cell = cells[index]
-            cell.string = String(character)
-            widths[index] = Self.width(of: String(character), font: font)
-            let changed = index >= old.count || old[index] != character
-            if animated, changed, !old.isEmpty {
-                cell.add(Self.slide(rising: rising, height: bounds.height), forKey: "roll")
+            let string = String(character)
+            widths[index] = Self.width(of: string, font: font)
+            cell.current.string = string
+            guard animated, index < old.count, old[index] != character, !old.isEmpty else {
+                cell.outgoing.isHidden = true
+                continue
             }
+            roll(cell, from: String(old[index]), rising: rising)
         }
         layoutCells()
         CATransaction.commit()
         invalidateIntrinsicContentSize()
+    }
+
+    private func roll(_ cell: DigitCell, from oldCharacter: String, rising: Bool) {
+        let height = max(bounds.height, 1)
+        cell.outgoing.string = oldCharacter
+        cell.outgoing.isHidden = false
+        cell.current.add(Self.slide(from: rising ? -height : height), forKey: "roll")
+        cell.outgoing.add(Self.slide(from: 0, to: rising ? height : -height), forKey: "roll")
+    }
+
+    private func finishRoll() {
+        cells.forEach { $0.outgoing.isHidden = true }
     }
 
     private func layoutCells() {
@@ -75,7 +101,9 @@ final class RollingNumberView: NSView {
         CATransaction.setDisableActions(true)
         var x: CGFloat = 0
         for (cell, width) in zip(cells, widths) {
-            cell.frame = CGRect(x: x, y: 0, width: width, height: bounds.height)
+            let frame = CGRect(x: x, y: 0, width: width, height: bounds.height)
+            cell.current.frame = frame
+            cell.outgoing.frame = frame
             x += width
         }
         CATransaction.commit()
@@ -83,33 +111,36 @@ final class RollingNumberView: NSView {
 
     private func resize(count: Int) {
         while cells.count > count {
-            cells.removeLast().removeFromSuperlayer()
+            let cell = cells.removeLast()
+            cell.current.removeFromSuperlayer()
+            cell.outgoing.removeFromSuperlayer()
             widths.removeLast()
         }
         while cells.count < count {
-            let cell = CATextLayer()
-            cell.font = font
-            cell.fontSize = font.pointSize
-            cell.alignmentMode = .center
-            cell.foregroundColor = Self.labelColor(for: effectiveAppearance)
-            cell.contentsScale = window?.backingScaleFactor ?? 2
-            layer?.addSublayer(cell)
+            let cell = DigitCell()
+            for layer in [cell.current, cell.outgoing] {
+                layer.font = font
+                layer.fontSize = font.pointSize
+                layer.alignmentMode = .center
+                layer.foregroundColor = Self.labelColor(for: effectiveAppearance)
+                layer.contentsScale = window?.backingScaleFactor ?? 2
+                layer.isHidden = layer === cell.outgoing
+                layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "hidden": NSNull()]
+            }
+            layer?.addSublayer(cell.current)
+            layer?.addSublayer(cell.outgoing)
             cells.append(cell)
             widths.append(0)
         }
     }
 
-    private static func slide(rising: Bool, height: CGFloat) -> CAAnimation {
+    private static func slide(from: CGFloat, to: CGFloat = 0) -> CAAnimation {
         let move = CABasicAnimation(keyPath: "transform.translation.y")
-        move.fromValue = (rising ? -1 : 1) * height * 0.5
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 0
-        fade.toValue = 1
-        let group = CAAnimationGroup()
-        group.animations = [move, fade]
-        group.duration = Self.duration
-        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        return group
+        move.fromValue = from
+        move.toValue = to
+        move.duration = duration
+        move.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
+        return move
     }
 
     private static func labelColor(for appearance: NSAppearance) -> CGColor {
