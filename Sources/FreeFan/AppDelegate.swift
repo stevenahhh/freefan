@@ -1,6 +1,7 @@
 import AppKit
 import FreeFanCore
 import FreeFanSMC
+import FreeFanUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let store = PresetStore()

@@ -2,25 +2,57 @@ import AppKit
 import FreeFanCore
 import FreeFanSMC
 
-struct LiveSnapshot {
-    var reading: SensorReading?
-    var fans: [FanInfo]
-    var pressure: MemoryPressure?
-    var helperInstalled: Bool
-    var helperConnected: Bool
-    var helperStatus: HelperStatus?
-    var helperError: String?
+public struct LiveSnapshot {
+    public var reading: SensorReading?
+    public var fans: [FanInfo]
+    public var pressure: MemoryPressure?
+    public var helperInstalled: Bool
+    public var helperConnected: Bool
+    public var helperStatus: HelperStatus?
+    public var helperError: String?
+
+    public init(
+        reading: SensorReading?,
+        fans: [FanInfo],
+        pressure: MemoryPressure?,
+        helperInstalled: Bool,
+        helperConnected: Bool,
+        helperStatus: HelperStatus?,
+        helperError: String?
+    ) {
+        self.reading = reading
+        self.fans = fans
+        self.pressure = pressure
+        self.helperInstalled = helperInstalled
+        self.helperConnected = helperConnected
+        self.helperStatus = helperStatus
+        self.helperError = helperError
+    }
 }
 
-struct PopoverActions {
-    var presetsChanged: () -> Void
-    var settingsChanged: () -> Void
-    var installHelper: () -> Void
-    var uninstallHelper: () -> Void
-    var quit: () -> Void
+public struct PopoverActions {
+    public var presetsChanged: () -> Void
+    public var settingsChanged: () -> Void
+    public var installHelper: () -> Void
+    public var uninstallHelper: () -> Void
+    public var quit: () -> Void
+
+    public init(
+        presetsChanged: @escaping () -> Void,
+        settingsChanged: @escaping () -> Void,
+        installHelper: @escaping () -> Void,
+        uninstallHelper: @escaping () -> Void,
+        quit: @escaping () -> Void
+    ) {
+        self.presetsChanged = presetsChanged
+        self.settingsChanged = settingsChanged
+        self.installHelper = installHelper
+        self.uninstallHelper = uninstallHelper
+        self.quit = quit
+    }
 }
 
-final class PopoverViewController: NSViewController {
+public final class PopoverViewController: NSViewController {
     private enum Layout {
         static let width: CGFloat = 380
         static let margin: CGFloat = 16
@@ -29,7 +61,7 @@ final class PopoverViewController: NSViewController {
 
     /// Called with the content size the popover should take. A shown NSPopover follows `contentSize`, not
     /// `preferredContentSize`, so whoever owns the popover applies it.
-    var onPreferredSizeChange: ((NSSize) -> Void)?
+    public var onPreferredSizeChange: ((NSSize) -> Void)?
 
     private let store: PresetStore
     private let settings: SettingsStore
@@ -44,7 +76,7 @@ final class PopoverViewController: NSViewController {
     private var snapshot: LiveSnapshot?
     private(set) var showingSettings = false
 
-    init(store: PresetStore, settings: SettingsStore, actions: PopoverActions) {
+    public init(store: PresetStore, settings: SettingsStore, actions: PopoverActions) {
         self.store = store
         self.settings = settings
         self.actions = actions
@@ -59,11 +91,11 @@ final class PopoverViewController: NSViewController {
         }
     }
 
-    required init?(coder: NSCoder) {
+    public required init?(coder: NSCoder) {
         return nil
     }
 
-    override func loadView() {
+    public override func loadView() {
         slider.onSelect = { [weak self] id in self?.select(id) }
         slider.onNew = { [weak self] in
             guard let self else { return }
@@ -119,17 +151,17 @@ final class PopoverViewController: NSViewController {
         resize()
     }
 
-    override func viewDidAppear() {
+    public override func viewDidAppear() {
         super.viewDidAppear()
         view.window?.makeFirstResponder(nil)
     }
 
-    override func viewWillDisappear() {
+    public override func viewWillDisappear() {
         super.viewWillDisappear()
         footer.dismissHelp()
     }
 
-    func update(_ snapshot: LiveSnapshot) {
+    public func update(_ snapshot: LiveSnapshot) {
         guard isViewLoaded else { return }
         self.snapshot = snapshot
 
