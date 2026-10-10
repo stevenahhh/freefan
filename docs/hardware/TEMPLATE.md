@@ -8,7 +8,7 @@ Measured on: <model name and identifier>, <chip>, macOS <version and build>, <nu
 
 ## Probe
 
-Paste the full output of `swift run --scratch-path build/scratch FreeFanProbe` (it is read-only). Put it in a
+Paste the full output of `swift run --scratch-path build/scratch OpenFanProbe` (it is read-only). Put it in a
 `<details>` block if it is long.
 
 ## Code changes
@@ -22,7 +22,7 @@ catalogue already covered the machine.>
 swift run --scratch-path build/scratch SMCCheck     # <n> checks
 swift run --scratch-path build/scratch CoreCheck    # <n> checks
 swift run --scratch-path build/scratch ControlCheck # <n> checks
-bash scripts/build-app.sh && codesign --verify --strict build/FreeFan.app
+bash scripts/build-app.sh && codesign --verify --strict build/OpenFan.app
 ```
 
 <All exit 0? Paste the last line of each. Any SKIP or failure, with the reason.>
@@ -57,19 +57,19 @@ Auto.
 ## C3 - persistence (required)
 
 Select a curve preset, quit the app from its menu and relaunch it.
-`printf 'STATUS\n' | nc -U /var/run/com.stevenahhh.freefan.sock` shows the helper's view.
+`printf 'STATUS\n' | nc -U /var/run/com.stevenahhh.openfan.sock` shows the helper's view.
 
 <What you saw: the fans after quitting (back to the system?), and the helper status within one tick of relaunching.>
 
 ## C4 - safety (required)
 
-**kill -9 of the app while controlling.** Fans at <rpm> (`md = 1`). `pkill -9 -x FreeFan`. <Log lines from
-`/var/log/com.stevenahhh.freefan.helper.log` and the first reading after: `md`, rpm, time in seconds.> Budget: 20 s.
+**kill -9 of the app while controlling.** Fans at <rpm> (`md = 1`). `pkill -9 -x OpenFan`. <Log lines from
+`/var/log/com.stevenahhh.openfan.helper.log` and the first reading after: `md`, rpm, time in seconds.> Budget: 20 s.
 
-**SIGTERM of the helper while controlling.** `sudo kill -TERM $(pgrep -f FreeFanHelper)`. <Log lines, `md` two
+**SIGTERM of the helper while controlling.** `sudo kill -TERM $(pgrep -f OpenFanHelper)`. <Log lines, `md` two
 seconds later, whether launchd restarted it and what its boot reset logged.>
 
-**Malformed commands.** Send each with `printf '<command>\n' | nc -U /var/run/com.stevenahhh.freefan.sock`. Every one
+**Malformed commands.** Send each with `printf '<command>\n' | nc -U /var/run/com.stevenahhh.openfan.sock`. Every one
 must be refused with a reason, and the helper's write counter (`writes=` in `STATUS`) must not move.
 
 | command | reply |
@@ -92,9 +92,9 @@ heap.
 
 | process | state | CPU (ms in 30 s) | footprint |
 |---|---|---|---|
-| FreeFan | popover closed | <> | <> |
-| FreeFan | popover open | <> | <> |
-| FreeFanHelper | controlling | <> | <> |
+| OpenFan | popover closed | <> | <> |
+| OpenFan | popover open | <> | <> |
+| OpenFanHelper | controlling | <> | <> |
 
 ## Not covered
 

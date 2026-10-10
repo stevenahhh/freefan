@@ -1,6 +1,6 @@
 # Contributing
 
-FreeFan is a small menu-bar app plus a root helper that writes to the SMC, so the bar is correctness and safety
+OpenFan is a small menu-bar app plus a root helper that writes to the SMC, so the bar is correctness and safety
 first and size second: nothing goes in that the app can do without.
 
 ## Build and check
@@ -10,7 +10,7 @@ swift build --scratch-path build/scratch
 swift run --scratch-path build/scratch CoreCheck
 swift run --scratch-path build/scratch ControlCheck
 swift run --scratch-path build/scratch SMCCheck     # needs a real Mac; its only write attempt must be refused
-bash scripts/build-app.sh                           # assembles and ad-hoc signs build/FreeFan.app
+bash scripts/build-app.sh                           # assembles and ad-hoc signs build/OpenFan.app
 ```
 
 XCTest is not available with the Command Line Tools alone, so the tests are the `*Check` executables. A fix comes with
@@ -29,10 +29,10 @@ a check that fails without it.
 - **Nothing personal.** No serial numbers, hardware UUIDs, user names, host names, IP addresses, tokens or private
   logs in code, commit messages, pull request text or screenshots. Write `~` for your home directory.
 
-## Making FreeFan work on your Mac
+## Making OpenFan work on your Mac
 
 This is the most useful contribution, and it has its own procedure with a measured, per-model evidence file: see
-[docs/hardware](docs/hardware/README.md). In short: run the read-only `FreeFanProbe`, add your sensor keys to the
+[docs/hardware](docs/hardware/README.md). In short: run the read-only `OpenFanProbe`, add your sensor keys to the
 catalogue if they are missing, run the verification in [docs/hardware/TEMPLATE.md](docs/hardware/TEMPLATE.md) on your
 own Mac, and open a pull request with the hardware template. One model per pull request.
 
@@ -44,7 +44,7 @@ own Mac, and open a pull request with the hardware template. One model per pull 
 
 ## Reporting a problem
 
-Open an issue with your Mac model, macOS version and the `FreeFanProbe` output. For a security problem do not open a
+Open an issue with your Mac model, macOS version and the `OpenFanProbe` output. For a security problem do not open a
 public issue: see [SECURITY.md](SECURITY.md).
 
 ## License
