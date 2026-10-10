@@ -443,6 +443,22 @@ do {
     check.expectEqual(MenuBarTemplate.sensors(in: "{nope}{cpu"), [], "an unknown or unclosed token needs nothing")
 }
 
+// MARK: - Fan speed wording
+
+do {
+    let fan = FanInfo(index: 0, minRPM: 2317, maxRPM: 7826)
+    let percent = FanSpeedFormat(fan: fan, showsRPM: false)
+    let rpm = FanSpeedFormat(fan: fan, showsRPM: true)
+    check.expectEqual(percent.text(forCurvePercent: 0), "Auto", "a curve at 0 hands the fans back to macOS")
+    check.expectEqual(rpm.text(forCurvePercent: -5), "Auto", "below 0 is still Auto")
+    check.expectEqual(percent.text(forCurvePercent: 3), "32%", "a curve value of 3 is 32 % of top speed: the fan's range starts at its minimum")
+    check.expectEqual(rpm.text(forCurvePercent: 3), "2482 rpm", "and the same value in rpm")
+    check.expectEqual(percent.text(forCurvePercent: 0.01), "30%", "the slowest speed the fan can run is 30 % of top speed")
+    check.expectEqual(percent.text(forCurvePercent: 100), "100%", "a curve value of 100 is top speed")
+    check.expectEqual(rpm.text(forCurvePercent: 100), "7826 rpm", "top speed in rpm")
+    check.expectEqual(FanSpeedFormat(fan: nil, showsRPM: false).text(forCurvePercent: 50), "--", "without a fan there is nothing to convert")
+}
+
 // MARK: - Settings store
 
 do {
