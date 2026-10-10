@@ -132,6 +132,28 @@ SMC write.
 - Popover memory: about 26 MB closed, 28-30 MB open, back to 26 MB after 30 open/close cycles. kill -9
   of the app while a curve was applied returned `md=0` in 144 ms.
 
+## C8 - popover round 2 (2026-10-10)
+
+Rebuilt popover, driven through the accessibility API against the release build installed in
+`/Applications`, with the helper reinstalled from the same bundle (`78385915…`).
+
+| what | evidence |
+|---|---|
+| Fan columns | Header shows CPU 51°, GPU 49°, battery 33°, FAN 0 37 %, FAN 1 37 % (percent of full speed against the helper's 2858/2863 rpm of 7826) with an empty third column |
+| Unit toggle | Clicking the fan row switched the values to `2858 / 2863` and wrote `"fanUnitsRPM": true` to `settings.json`; clicking again restored percent and `false` |
+| Version 1 migration | The user's file (edited `performance`, renamed `Custom`) loaded as `custom-1` with the active selection following it, the built-in Performance restored, and the file rewritten as version 2 holding only that user preset |
+| Built-ins read-only | Selecting Silent shows no Rename and no Delete, a disabled input, a non-draggable graph and the note "Built-in preset. Duplicate it to make your own curve."; Full says "Both fans run at maximum speed…" and drove both fans to 7826 rpm (`mode=curve`) |
+| Zero fan | `CURVE max 60:0,80:50` at 49 °C released both fans: the helper reported `OK mode=auto temp=- rpm=-` and macOS took the fans over (they settled around 2350-2500 rpm on its own curve). Re-applying the user's preset returned `mode=curve rpm=2695.74,2695.74` |
+| Graph edits | On a throwaway preset, dragging point 2 from (55, 15) to (60, 40), double-click insert at 20 °C (clamped to `20:0`) and right-click remove each rewrote `presets.json` exactly as expected; the throwaway preset was deleted afterwards |
+| Rename | Rename opened a field with Save/Cancel; Cancel kept the stored name, Save wrote the new one. Finding: `NSTextField.selectText(_:)` ends the field editor it just started, so the rename could never begin until that call was replaced |
+| Help | Hovering the help button showed the bubble (drag, double-click, right-click, built-ins must be duplicated, the 95 °C guard, the 0 % rule) and it hid when the cursor left; tracking needs `.activeAlways` because a popover does not make the app active |
+| Appearance | The popover and all of its text verified legible in light and dark mode, with the pressure label in the native label color |
+| Overhead | With the popover open at its 1 s refresh: 0.2 % CPU, phys_footprint 30.6 MB; closed: 0.0-0.1 % CPU, 27.4 MB. The helper: 0.0-0.1 % CPU, 2.5 MB |
+
+A SwiftUI header was tried first for the rolling digits and rejected: it measured 0.3 % CPU but a
+phys_footprint of 76.7 MB, because linking the framework costs about 50 MB in a menu-bar app. The
+header is AppKit with one `CATextLayer` per digit instead (see C5 for the earlier numbers).
+
 ## Not covered
 
 - A real sleep/wake cycle (the daemon releases the fans before sleep and re-applies the curve after
