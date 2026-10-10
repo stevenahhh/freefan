@@ -1,19 +1,21 @@
 import AppKit
 
-/// A large number whose changed characters roll, like the system's numeric text transition: the old glyph slides out
-/// while the new one slides in, both fully opaque and clipped to the row. It is built from layers so an update
-/// redraws nothing, and stays in AppKit so the app links no UI framework for it.
+/// A large number whose changed characters roll the way the system's numeric text transition does: the glyph that is
+/// replaced slides out while the new one slides in, both clipped to the row and blurred as they travel, so nothing
+/// overlaps. Columns are laid out from the right of a monospaced font, so a changing digit count never shifts the
+/// digits that stayed.
 final class RollingNumberView: NSView {
-    private static let duration: CFTimeInterval = 0.32
+    private static let duration: CFTimeInterval = 0.3
+    private static let blurRadius: CGFloat = 5
 
-    private final class DigitCell {
-        let current = CATextLayer()
-        let outgoing = CATextLayer()
+    private final class Column {
+        let incoming = GlyphLayer()
+        let outgoing = GlyphLayer()
     }
 
     private let font: NSFont
     private var text = ""
-    private var cells: [DigitCell] = []
+    private var columns: [Column] = []
     private var widths: [CGFloat] = []
 
     init(font: NSFont) {
@@ -36,24 +38,25 @@ final class RollingNumberView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         let color = Self.labelColor(for: effectiveAppearance)
-        cells.forEach { cell in
-            cell.current.foregroundColor = color
-            cell.outgoing.foregroundColor = color
+        columns.forEach { column in
+            column.incoming.textColor = color
+            column.outgoing.textColor = color
         }
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        cells.forEach { cell in
-            cell.current.contentsScale = window?.backingScaleFactor ?? 2
-            cell.outgoing.contentsScale = window?.backingScaleFactor ?? 2
+        let scale = window?.backingScaleFactor ?? 2
+        columns.forEach { column in
+            column.incoming.contentsScale = scale
+            column.outgoing.contentsScale = scale
         }
-        layoutCells()
+        layoutColumns()
     }
 
     override func layout() {
         super.layout()
-        layoutCells()
+        layoutColumns()
     }
 
     func setText(_ newText: String, animated: Bool) {
@@ -68,84 +71,89 @@ final class RollingNumberView: NSView {
         CATransaction.setDisableActions(true)
         CATransaction.setCompletionBlock { [weak self] in self?.finishRoll() }
         resize(count: new.count)
-        for (index, character) in new.enumerated() {
-            let cell = cells[index]
-            let string = String(character)
-            widths[index] = Self.width(of: string, font: font)
-            cell.current.string = string
-            guard animated, index < old.count, old[index] != character, !old.isEmpty else {
-                cell.outgoing.isHidden = true
+        // Both strings share their right edge, so the digits that did not change stay in place.
+        for index in 0..<new.count {
+            let column = columns[index]
+            let oldCharacter = index >= new.count - old.count ? String(old[index - (new.count - old.count)]) : nil
+            let newCharacter = String(new[index])
+            widths[index] = Self.width(of: newCharacter, font: font)
+            column.incoming.text = newCharacter
+            guard animated, let oldCharacter, oldCharacter != newCharacter else {
+                column.outgoing.isHidden = true
                 continue
             }
-            roll(cell, from: String(old[index]), rising: rising)
+            roll(column, from: oldCharacter, rising: rising)
         }
-        layoutCells()
+        layoutColumns()
         CATransaction.commit()
         invalidateIntrinsicContentSize()
     }
 
-    private func roll(_ cell: DigitCell, from oldCharacter: String, rising: Bool) {
+    private func roll(_ column: Column, from oldCharacter: String, rising: Bool) {
         let height = max(bounds.height, 1)
-        cell.outgoing.string = oldCharacter
-        cell.outgoing.isHidden = false
-        cell.current.add(Self.slide(from: rising ? -height : height), forKey: "roll")
-        cell.outgoing.add(Self.slide(from: 0, to: rising ? height : -height), forKey: "roll")
+        column.outgoing.text = oldCharacter
+        column.outgoing.isHidden = false
+        let travel = rising ? height : -height
+        column.incoming.add(Self.roll(from: -travel, blurFrom: Self.blurRadius, blurTo: 0), forKey: "roll")
+        column.outgoing.add(Self.roll(from: 0, to: travel, blurFrom: 0, blurTo: Self.blurRadius), forKey: "roll")
     }
 
     private func finishRoll() {
-        cells.forEach { $0.outgoing.isHidden = true }
+        columns.forEach { $0.outgoing.isHidden = true }
     }
 
-    private func layoutCells() {
+    private func layoutColumns() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        var x: CGFloat = 0
-        for (cell, width) in zip(cells, widths) {
+        var x = bounds.width
+        for (column, width) in zip(columns, widths).reversed() {
+            x -= width
             let frame = CGRect(x: x, y: 0, width: width, height: bounds.height)
-            cell.current.frame = frame
-            cell.outgoing.frame = frame
-            x += width
+            column.incoming.frame = frame
+            column.outgoing.frame = frame
         }
         CATransaction.commit()
     }
 
     private func resize(count: Int) {
-        while cells.count > count {
-            let cell = cells.removeLast()
-            cell.current.removeFromSuperlayer()
-            cell.outgoing.removeFromSuperlayer()
+        while columns.count > count {
+            let column = columns.removeLast()
+            column.incoming.removeFromSuperlayer()
+            column.outgoing.removeFromSuperlayer()
             widths.removeLast()
         }
-        while cells.count < count {
-            let cell = DigitCell()
-            for layer in [cell.current, cell.outgoing] {
+        while columns.count < count {
+            let column = Column()
+            for layer in [column.incoming, column.outgoing] {
                 layer.font = font
-                layer.fontSize = font.pointSize
-                layer.alignmentMode = .center
-                layer.foregroundColor = Self.labelColor(for: effectiveAppearance)
                 layer.contentsScale = window?.backingScaleFactor ?? 2
-                layer.isHidden = layer === cell.outgoing
+                layer.isHidden = layer === column.outgoing
                 layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "hidden": NSNull()]
             }
-            layer?.addSublayer(cell.current)
-            layer?.addSublayer(cell.outgoing)
-            cells.append(cell)
+            layer?.addSublayer(column.incoming)
+            layer?.addSublayer(column.outgoing)
+            columns.append(column)
             widths.append(0)
         }
     }
 
-    private static func slide(from: CGFloat, to: CGFloat = 0) -> CAAnimation {
+    private static func roll(from: CGFloat, to: CGFloat = 0, blurFrom: CGFloat, blurTo: CGFloat) -> CAAnimationGroup {
         let move = CABasicAnimation(keyPath: "transform.translation.y")
         move.fromValue = from
         move.toValue = to
-        move.duration = duration
-        move.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
-        return move
+        let blur = CABasicAnimation(keyPath: "blurRadius")
+        blur.fromValue = blurFrom
+        blur.toValue = blurTo
+        let group = CAAnimationGroup()
+        group.animations = [move, blur]
+        group.duration = duration
+        group.timingFunction = CAMediaTimingFunction(controlPoints: 0.35, 0, 0.25, 1)
+        return group
     }
 
-    private static func labelColor(for appearance: NSAppearance) -> CGColor {
-        var color = NSColor.labelColor.cgColor
-        appearance.performAsCurrentDrawingAppearance { color = NSColor.labelColor.cgColor }
+    private static func labelColor(for appearance: NSAppearance) -> NSColor {
+        var color = NSColor.labelColor
+        appearance.performAsCurrentDrawingAppearance { color = NSColor.labelColor }
         return color
     }
 

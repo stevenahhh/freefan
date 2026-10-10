@@ -40,8 +40,8 @@ struct HeaderReadout: Equatable {
 }
 
 private final class HeaderColumn: NSView {
-    private static let valueFont = NSFont.systemFont(ofSize: 26, weight: .semibold)
-    private static let captionFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
+    private static let valueFont = NSFont.monospacedSystemFont(ofSize: 26, weight: .semibold)
+    private static let captionFont = NSFont.monospacedSystemFont(ofSize: 9, weight: .semibold)
 
     private let value = RollingNumberView(font: HeaderColumn.valueFont)
     private let caption = NSTextField(labelWithString: "")
