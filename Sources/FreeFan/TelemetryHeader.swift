@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import FreeFanSMC
 
 struct HeaderReadout: Equatable {
@@ -40,82 +39,164 @@ struct HeaderReadout: Equatable {
     }
 }
 
-final class HeaderModel: ObservableObject {
-    @Published var readout = HeaderReadout()
-    @Published var showsRPM = false
-    var onUnitsChanged: ((Bool) -> Void)?
+private final class HeaderColumn: NSView {
+    private static let valueFont = NSFont.systemFont(ofSize: 26, weight: .semibold)
+    private static let captionFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
 
-    func setShowsRPM(_ value: Bool) {
-        guard value != showsRPM else { return }
-        showsRPM = value
-        onUnitsChanged?(value)
+    private let value = RollingNumberView(font: HeaderColumn.valueFont)
+    private let caption = NSTextField(labelWithString: "")
+
+    init() {
+        super.init(frame: .zero)
+        caption.font = Self.captionFont
+        caption.textColor = .secondaryLabelColor
+        for view in [value, caption] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            value.leadingAnchor.constraint(equalTo: leadingAnchor),
+            value.topAnchor.constraint(equalTo: topAnchor),
+            value.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            caption.leadingAnchor.constraint(equalTo: leadingAnchor),
+            caption.topAnchor.constraint(equalTo: value.bottomAnchor),
+            caption.bottomAnchor.constraint(equalTo: bottomAnchor),
+            caption.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    func set(value valueText: String, caption captionText: String) {
+        value.setText(valueText, animated: true)
+        if caption.stringValue != captionText { caption.stringValue = captionText }
+    }
+
+    func setPlaceholder() {
+        value.setText("", animated: false)
+        if !caption.stringValue.isEmpty { caption.stringValue = "" }
     }
 }
 
-private struct Stat: Identifiable {
-    var id: String
-    var value: String
-    var caption: String
-}
+private final class HeaderRow: NSView {
+    private let columns = (0..<3).map { _ in HeaderColumn() }
 
-struct HeaderContent: View {
-    @ObservedObject var model: HeaderModel
+    init() {
+        super.init(frame: .zero)
+        let stack = NSStackView(views: columns)
+        stack.orientation = .horizontal
+        stack.distribution = .fillEqually
+        stack.alignment = .top
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+    }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            row(temperatures)
-            ForEach(Array(model.readout.fanRows.enumerated()), id: \.offset) { _, fans in
-                Button {
-                    model.setShowsRPM(!model.showsRPM)
-                } label: {
-                    row(fans.map(fanStat) + [Stat(id: "empty", value: "", caption: "")])
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(model.showsRPM ? "Show fan speed as a percentage of full speed" : "Show fan speed in rpm")
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    func set(_ cells: [(value: String, caption: String)]) {
+        for (index, column) in columns.enumerated() {
+            if index < cells.count {
+                column.set(value: cells[index].value, caption: cells[index].caption)
+            } else {
+                column.setPlaceholder()
             }
         }
-        .animation(.snappy, value: model.readout)
-        .animation(.snappy, value: model.showsRPM)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The popover's top rows: CPU, GPU and battery temperatures, then one column per fan. Fan values are a percentage
+/// of full speed until the fan row is clicked; the choice is handed to the owner to remember.
+final class TelemetryHeaderView: NSView {
+    var onUnitsChanged: ((Bool) -> Void)?
+
+    private(set) var showsRPM = false
+
+    private let temperatureRow = HeaderRow()
+    private var fanRows: [HeaderRow] = []
+    private let stack = NSStackView()
+
+    override var isFlipped: Bool { true }
+
+    init() {
+        super.init(frame: .zero)
+        rebuild()
     }
 
-    private var temperatures: [Stat] {
-        [
-            Stat(id: "cpu", value: Self.degrees(model.readout.cpu), caption: "CPU"),
-            Stat(id: "gpu", value: Self.degrees(model.readout.gpu), caption: "GPU"),
-            Stat(id: "bat", value: Self.degrees(model.readout.battery), caption: "BATTERY"),
-        ]
+    required init?(coder: NSCoder) {
+        return nil
     }
 
-    private func fanStat(_ fan: HeaderReadout.Fan?) -> Stat {
-        guard let fan else { return Stat(id: "empty", value: "", caption: "") }
+    func update(_ readout: HeaderReadout) {
+        temperatureRow.set([
+            (Self.degrees(readout.cpu), "CPU"),
+            (Self.degrees(readout.gpu), "GPU"),
+            (Self.degrees(readout.battery), "BATTERY"),
+        ])
+        while fanRows.count < readout.fanRows.count {
+            makeFanRow()
+        }
+        for (index, row) in readout.fanRows.enumerated() where index < fanRows.count {
+            fanRows[index].set(row.map(fanCell))
+        }
+    }
+
+    func setShowsRPM(_ value: Bool, notify: Bool) {
+        guard value != showsRPM else { return }
+        showsRPM = value
+        if notify { onUnitsChanged?(value) }
+    }
+
+    private func rebuild() {
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(temperatureRow)
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+    }
+
+    private func makeFanRow() -> HeaderRow {
+        let row = HeaderRow()
+        row.toolTip = "Click to switch the fan values between a percentage and rpm"
+        let click = NSClickGestureRecognizer(target: self, action: #selector(fanRowClicked(_:)))
+        row.addGestureRecognizer(click)
+        fanRows.append(row)
+        stack.addArrangedSubview(row)
+        row.widthAnchor.constraint(equalTo: temperatureRow.widthAnchor).isActive = true
+        return row
+    }
+
+    @objc private func fanRowClicked(_ sender: Any?) {
+        showsRPM.toggle()
+        onUnitsChanged?(showsRPM)
+    }
+
+    private func fanCell(_ fan: HeaderReadout.Fan?) -> (value: String, caption: String) {
+        guard let fan else { return ("", "") }
         let value: String
         if let rpm = fan.rpm {
-            value = model.showsRPM ? String(Int(rpm.rounded())) : "\(Int((fan.percent ?? 0).rounded()))%"
+            value = showsRPM ? String(Int(rpm.rounded())) : "\(Int((fan.percent ?? 0).rounded()))%"
         } else {
             value = "--"
         }
-        return Stat(id: "fan\(fan.index)", value: value, caption: "FAN \(fan.index)")
-    }
-
-    private func row(_ stats: [Stat]) -> some View {
-        HStack(alignment: .top, spacing: 4) {
-            ForEach(stats) { stat in
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(stat.value)
-                        .font(.system(size: 26, weight: .semibold))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                        .lineLimit(1)
-                        .fixedSize()
-                    Text(stat.caption)
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
+        return (value, "FAN \(fan.index)")
     }
 
     private static func degrees(_ value: Float?) -> String {
