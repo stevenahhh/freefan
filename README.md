@@ -52,6 +52,18 @@ Hovering the **?** in the footer explains the editor: drag a point to move it, d
 space to add one, right-click a point to remove it, and built-in presets have to be duplicated before
 they can be changed. The **☰** menu next to it installs or uninstalls the helper and quits the app.
 
+## Coming from FreeFan
+
+OpenFan is FreeFan under a new name. The identifiers changed with it, so an installation of FreeFan needs
+two steps once:
+
+1. Install OpenFan's helper (**Install Helper…**). The installer stops and removes the old FreeFan helper
+   first, which hands the fans back to macOS, so only one helper is ever installed.
+2. Move your presets and settings: `mv ~/Library/Application\ Support/FreeFan ~/Library/Application\ Support/OpenFan`
+   before the first launch. Without it OpenFan starts with the built-in presets.
+
+Then delete `FreeFan.app`.
+
 ## Supported Macs
 
 OpenFan is verified on one model so far, the MacBook Pro Mac17,9 (Apple M5 Pro). The helper writes to the SMC on
