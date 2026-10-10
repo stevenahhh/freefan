@@ -138,14 +138,14 @@ final class TelemetryHeaderView: NSView {
     }
 
     func update(_ readout: HeaderReadout) {
+        while fanRows.count < readout.fanRows.count {
+            makeFanRow()
+        }
         temperatureRow.set([
             (Self.degrees(readout.cpu), "CPU"),
             (Self.degrees(readout.gpu), "GPU"),
             (Self.degrees(readout.battery), "BATTERY"),
         ])
-        while fanRows.count < readout.fanRows.count {
-            makeFanRow()
-        }
         for (index, row) in readout.fanRows.enumerated() where index < fanRows.count {
             fanRows[index].set(row.map(fanCell))
         }
@@ -162,7 +162,8 @@ final class TelemetryHeaderView: NSView {
         stack.alignment = .leading
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.addArrangedSubview(temperatureRow)
+        // The fans are what the app controls, so their row sits above the temperatures.
+        stack.setViews([temperatureRow], in: .top)
         addSubview(stack)
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: topAnchor),
@@ -178,7 +179,7 @@ final class TelemetryHeaderView: NSView {
         let click = NSClickGestureRecognizer(target: self, action: #selector(fanRowClicked(_:)))
         row.addGestureRecognizer(click)
         fanRows.append(row)
-        stack.addArrangedSubview(row)
+        stack.setViews(fanRows + [temperatureRow], in: .top)
         row.widthAnchor.constraint(equalTo: temperatureRow.widthAnchor).isActive = true
         return row
     }
