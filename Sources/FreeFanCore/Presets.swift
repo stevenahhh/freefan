@@ -33,7 +33,7 @@ public struct Preset: Codable, Equatable, Identifiable, Sendable {
 public struct PresetLibrary: Codable, Equatable, Sendable {
     public static let autoID = "auto"
     public static let fullID = "full"
-    static let chooseHint = "Choose a preset above to apply it, or duplicate one to make it yours."
+    static let chooseHint = "Choose a preset below to apply it, or duplicate one to make it yours."
     /// What the editor says instead of a graph while the fans follow the system.
     public static let autoNote = "Auto: macOS controls the fans.\n" + chooseHint
     /// Version 2 stores only the user's presets; version 1 also stored copies of the built-ins.

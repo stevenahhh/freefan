@@ -18,6 +18,7 @@ final class CurveEditorPanel: NSView {
 
     private let store: PresetStore
     private let graph = CurveEditorView(frame: .zero)
+    private let picker: NSView
     private let nameEditor = PresetNameEditor()
     private let inputPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let duplicateButton = NSButton(title: "Duplicate", target: nil, action: nil)
@@ -25,14 +26,17 @@ final class CurveEditorPanel: NSView {
     private let noteLabel = NSTextField(wrappingLabelWithString: "")
     private let errorLabel = NSTextField(labelWithString: "")
     private let placeholder = NSTextField(wrappingLabelWithString: "")
-    private let editorStack = NSStackView()
+    private let nameRow = NSStackView()
+    private let buttonRow = NSStackView()
+    private let stack = NSStackView()
 
     private var draft: Preset?
     private var deleteArmed = false
     private var lastError: String?
 
-    init(store: PresetStore, width: CGFloat) {
+    init(store: PresetStore, picker: NSView, width: CGFloat) {
         self.store = store
+        self.picker = picker
         super.init(frame: .zero)
         configure(width: width)
     }
@@ -78,7 +82,6 @@ final class CurveEditorPanel: NSView {
     private func configure(width: CGFloat) {
         graph.onEdit = { [weak self] points in self?.graphEdited(points) }
         graph.onCommit = { [weak self] points in self?.graphCommitted(points) }
-        graph.heightAnchor.constraint(equalToConstant: 200).isActive = true
 
         nameEditor.onCommit = { [weak self] name in self?.commitName(name) }
         nameEditor.onError = { [weak self] message in self?.fail(message) }
@@ -111,52 +114,60 @@ final class CurveEditorPanel: NSView {
         placeholder.preferredMaxLayoutWidth = width
 
         nameEditor.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let nameRow = NSStackView(views: [nameEditor, inputPopup])
+        nameRow.setViews([nameEditor, inputPopup], in: .leading)
         nameRow.orientation = .horizontal
         nameRow.spacing = 8
         nameRow.alignment = .centerY
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
-        let buttonRow = NSStackView(views: [duplicateButton, deleteButton, spacer])
+        buttonRow.setViews([duplicateButton, deleteButton, spacer], in: .leading)
         buttonRow.orientation = .horizontal
         buttonRow.spacing = 8
         buttonRow.alignment = .centerY
 
-        let rows: [NSView] = [graph, nameRow, buttonRow, noteLabel, errorLabel]
-        editorStack.setViews(rows, in: .top)
-        editorStack.orientation = .vertical
-        editorStack.alignment = .leading
-        editorStack.spacing = 8
+        // The graph and the text that replaces it share one slot, so the picker below never moves when the preset changes.
+        let graphSlot = NSView()
+        for view in [graph, placeholder] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            graphSlot.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            graphSlot.heightAnchor.constraint(equalToConstant: 200),
+            graph.topAnchor.constraint(equalTo: graphSlot.topAnchor),
+            graph.bottomAnchor.constraint(equalTo: graphSlot.bottomAnchor),
+            graph.leadingAnchor.constraint(equalTo: graphSlot.leadingAnchor),
+            graph.trailingAnchor.constraint(equalTo: graphSlot.trailingAnchor),
+            placeholder.centerYAnchor.constraint(equalTo: graphSlot.centerYAnchor),
+            placeholder.leadingAnchor.constraint(equalTo: graphSlot.leadingAnchor),
+            placeholder.trailingAnchor.constraint(equalTo: graphSlot.trailingAnchor),
+        ])
+
+        let rows: [NSView] = [graphSlot, picker, nameRow, buttonRow, noteLabel, errorLabel]
+        stack.setViews(rows, in: .top)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
         for row in rows {
             row.widthAnchor.constraint(equalToConstant: width).isActive = true
         }
 
-        editorStack.translatesAutoresizingMaskIntoConstraints = false
-        placeholder.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(editorStack)
-        addSubview(placeholder)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
         NSLayoutConstraint.activate([
-            editorStack.topAnchor.constraint(equalTo: topAnchor),
-            editorStack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            editorStack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            editorStack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            placeholder.centerYAnchor.constraint(equalTo: centerYAnchor),
-            placeholder.leadingAnchor.constraint(equalTo: leadingAnchor),
-            placeholder.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
     }
 
     private func render() {
         guard let draft, !draft.isFullSpeed else {
-            editorStack.isHidden = true
-            placeholder.isHidden = false
-            let message = draft?.editorNote ?? PresetLibrary.autoNote
-            if placeholder.stringValue != message { placeholder.stringValue = message }
+            showText(draft?.editorNote ?? PresetLibrary.autoNote)
             return
         }
-        editorStack.isHidden = false
-        placeholder.isHidden = true
+        setTextOnly(false)
 
         let builtIn = draft.isBuiltIn
         graph.isEditable = !builtIn
@@ -175,6 +186,20 @@ final class CurveEditorPanel: NSView {
         if noteLabel.stringValue != note { noteLabel.stringValue = note }
         noteLabel.isHidden = note.isEmpty
         refreshError()
+    }
+
+    private func showText(_ message: String) {
+        setTextOnly(true)
+        if placeholder.stringValue != message { placeholder.stringValue = message }
+        refreshError()
+    }
+
+    private func setTextOnly(_ textOnly: Bool) {
+        graph.isHidden = textOnly
+        placeholder.isHidden = !textOnly
+        nameRow.isHidden = textOnly
+        buttonRow.isHidden = textOnly
+        noteLabel.isHidden = textOnly
     }
 
     private func updateDeleteTitle() {

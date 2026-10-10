@@ -68,7 +68,7 @@ public final class PopoverViewController: NSViewController {
     private let actions: PopoverActions
     private let header = TelemetryHeaderView()
     private let warningLabel = NSTextField(wrappingLabelWithString: "")
-    private let slider = PresetSliderView(width: Layout.inner)
+    private let slider: PresetSliderView
     private let editor: CurveEditorPanel
     private let settingsPanel: SettingsPanel
     let footer = PopoverFooter(width: Layout.inner)
@@ -80,7 +80,9 @@ public final class PopoverViewController: NSViewController {
         self.store = store
         self.settings = settings
         self.actions = actions
-        self.editor = CurveEditorPanel(store: store, width: Layout.inner)
+        let slider = PresetSliderView(width: Layout.inner)
+        self.slider = slider
+        self.editor = CurveEditorPanel(store: store, picker: slider, width: Layout.inner)
         self.settingsPanel = SettingsPanel(settings: settings, width: Layout.inner)
         super.init(nibName: nil, bundle: nil)
         header.setShowsRPM(settings.settings.fanUnitsRPM, notify: false)
@@ -122,7 +124,7 @@ public final class PopoverViewController: NSViewController {
         let separator = NSBox()
         separator.boxType = .separator
 
-        let sections: [NSView] = [header, warningLabel, slider, editor, settingsPanel, separator, footer]
+        let sections: [NSView] = [header, warningLabel, editor, settingsPanel, separator, footer]
         let stack = NSStackView(views: sections)
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -259,7 +261,6 @@ public final class PopoverViewController: NSViewController {
         showingSettings.toggle()
         view.window?.makeFirstResponder(nil)
         footer.dismissHelp()
-        slider.isHidden = showingSettings
         editor.isHidden = showingSettings
         settingsPanel.isHidden = !showingSettings
         resize()
