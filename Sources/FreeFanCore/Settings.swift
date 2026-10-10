@@ -8,19 +8,23 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var version: Int
     public var menuBarTemplate: String
     public var showPressureDot: Bool
+    /// Header fan values: rpm when true, percent of full speed when false.
+    public var fanUnitsRPM: Bool
 
     public init(
         version: Int = AppSettings.currentVersion,
         menuBarTemplate: String = AppSettings.defaultTemplate,
-        showPressureDot: Bool = true
+        showPressureDot: Bool = true,
+        fanUnitsRPM: Bool = false
     ) {
         self.version = version
         self.menuBarTemplate = menuBarTemplate
         self.showPressureDot = showPressureDot
+        self.fanUnitsRPM = fanUnitsRPM
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, menuBarTemplate, showPressureDot
+        case version, menuBarTemplate, showPressureDot, fanUnitsRPM
     }
 
     public init(from decoder: Decoder) throws {
@@ -28,6 +32,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? AppSettings.currentVersion
         menuBarTemplate = try container.decodeIfPresent(String.self, forKey: .menuBarTemplate) ?? AppSettings.defaultTemplate
         showPressureDot = try container.decodeIfPresent(Bool.self, forKey: .showPressureDot) ?? true
+        fanUnitsRPM = try container.decodeIfPresent(Bool.self, forKey: .fanUnitsRPM) ?? false
     }
 
     static func clamped(_ template: String) -> String {
@@ -79,6 +84,10 @@ public final class SettingsStore {
 
     public func setShowPressureDot(_ show: Bool) {
         settings.showPressureDot = show
+    }
+
+    public func setFanUnitsRPM(_ showsRPM: Bool) {
+        settings.fanUnitsRPM = showsRPM
     }
 
     public func save() throws {

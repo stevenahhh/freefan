@@ -101,7 +101,7 @@ check.expectClose(silent.percent(at: 120), 100, tolerance: 0.0001, "clamp above 
 // MARK: - PresetLibrary.defaults
 
 let defaults = PresetLibrary.defaults()
-check.expectEqual(defaults.version, 1, "defaults version")
+check.expectEqual(defaults.version, 2, "defaults version")
 check.expectEqual(defaults.active, PresetLibrary.autoID, "defaults active is auto")
 check.expectEqual(defaults.presets.count, 4, "defaults has 4 presets")
 check.expectEqual(defaults.presets.map { $0.id }, ["silent", "balanced", "performance", "full"], "defaults ids")
@@ -109,20 +109,45 @@ check.expectEqual(defaults.presets.map { $0.name }, ["Silent", "Balanced", "Perf
 let silentPreset = defaults.preset(id: "silent")
 check.expect(silentPreset != nil, "silent preset exists")
 check.expectEqual(silentPreset?.points ?? [], [
-    CurvePoint(t: 50, p: 0),
+    CurvePoint(t: 30, p: 0),
+    CurvePoint(t: 50, p: 5),
     CurvePoint(t: 70, p: 15),
     CurvePoint(t: 85, p: 45),
     CurvePoint(t: 95, p: 100),
 ], "Silent points exactly as listed")
 check.expectEqual(silentPreset.map { HelperCommand.curve(input: $0.input, points: $0.points).serialized } ?? "",
-                  "CURVE max 50:0,70:15,85:45,95:100", "Silent input is max")
+                  "CURVE max 30:0,50:5,70:15,85:45,95:100", "Silent input is max")
 check.expectEqual(defaults.preset(id: "full")?.points ?? [], [
-    CurvePoint(t: 30, p: 100), CurvePoint(t: 100, p: 100),
+    CurvePoint(t: 0, p: 100), CurvePoint(t: 130, p: 100),
 ], "Full points exactly as listed")
+check.expect(defaults.presets.allSatisfy(\.isBuiltIn), "the defaults are all built-ins")
+for preset in defaults.presets where preset.id != PresetLibrary.fullID {
+    check.expectClose(preset.curve.percent(at: 30), 0, tolerance: 0.0001, "\(preset.id) stops the fans at 30 C")
+}
+check.expectClose(defaults.preset(id: PresetLibrary.fullID)!.curve.percent(at: 20), 100, tolerance: 0.0001,
+                  "Full holds full speed at any temperature")
 for preset in defaults.presets {
     check.expectNoThrow("default preset \(preset.id) validates") { try preset.curve.validate() }
 }
 let maxInput = silentPreset!.input
+
+// The editor's copy/new rules and the notes it shows for presets it cannot edit.
+let copyOfBuiltIn = defaults.newCustomPreset(copying: defaults.preset(id: "balanced"))
+check.expectEqual(copyOfBuiltIn.name, "Balanced Copy", "a copy is named after its source")
+check.expectEqual(copyOfBuiltIn.points, defaults.preset(id: "balanced")?.points ?? [], "a copy keeps the source curve")
+check.expectEqual(copyOfBuiltIn.input, defaults.preset(id: "balanced")?.input ?? .cpu, "a copy keeps the source input")
+check.expect(!copyOfBuiltIn.isBuiltIn, "a copy is a user preset")
+check.expect(!PresetLibrary.builtIns.contains { $0.id == copyOfBuiltIn.id }, "a copy does not reuse a built-in id")
+let starterPreset = defaults.newCustomPreset(copying: nil)
+check.expectEqual(starterPreset.points, PresetLibrary.starterPoints, "a new preset starts on the starter curve")
+check.expectEqual(starterPreset.name, "New Preset", "a new preset gets a name")
+check.expectEqual(defaults.freeName(based: "Balanced"), "Balanced 2", "a name already taken gets a number")
+check.expectEqual(defaults.freeName(based: "Mine"), "Mine", "a free name is kept as asked")
+check.expectEqual(defaults.preset(id: PresetLibrary.fullID)?.editorNote.contains("maximum speed") ?? false, true,
+                  "Full says it runs at maximum speed")
+check.expectEqual(defaults.preset(id: "silent")?.editorNote.contains("Built-in preset") ?? false, true,
+                  "a built-in is described as read-only")
+check.expectEqual(copyOfBuiltIn.editorNote, "", "a user preset has no note")
 
 // MARK: - PresetStore
 
@@ -190,9 +215,24 @@ check.expectNoThrow("remove custom") { try storeActive.remove(id: "custom") }
 let reloadedRemove = check.expectNoThrow("reload after remove") { try PresetStore(url: storeURL).load() }
 check.expectEqual(reloadedRemove?.preset(id: "custom"), nil, "remove persisted")
 check.expectEqual(reloadedRemove?.presets.count ?? 0, 4, "remove dropped one preset")
-check.expectNoThrow("remove active balanced") { try storeActive.remove(id: "balanced") }
-let reloadedRemoveActive = check.expectNoThrow("reload after removing active") { try PresetStore(url: storeURL).load() }
+
+check.expectThrows("a built-in cannot be removed") { try storeActive.remove(id: "balanced") }
+check.expectThrows("a built-in cannot be upserted") {
+    try storeActive.upsert(Preset(id: "silent", name: "Sneaky", input: maxInput, points: custom.points))
+}
+let reloadedRefused = check.expectNoThrow("reload after refused writes") { try PresetStore(url: storeURL).load() }
+check.expectEqual(reloadedRefused?.preset(id: "silent")?.name ?? "", "Silent", "the built-in is unchanged")
+check.expectEqual(reloadedRefused?.presets.count ?? 0, 4, "a refused write saves nothing")
+
+let activeCustom = Preset(id: "custom-7", name: "Active", input: maxInput, points: [
+    CurvePoint(t: 40, p: 10), CurvePoint(t: 80, p: 90),
+])
+check.expectNoThrow("upsert the active custom") { try storeActive.upsert(activeCustom) }
+check.expectNoThrow("activate the custom") { try storeActive.setActive("custom-7") }
+check.expectNoThrow("remove the active custom") { try storeActive.remove(id: "custom-7") }
+let reloadedRemoveActive = check.expectNoThrow("reload after removing the active preset") { try PresetStore(url: storeURL).load() }
 check.expectEqual(reloadedRemoveActive?.active ?? "", PresetLibrary.autoID, "removing the active preset resets to auto")
+check.expectEqual(reloadedRemoveActive?.presets.count ?? 0, 4, "the custom preset is gone")
 
 // load() drops invalid presets and repairs a dangling active id.
 let badJSON = """
@@ -203,10 +243,34 @@ let badJSON = """
 """
 try? badJSON.data(using: .utf8)!.write(to: storeURL)
 let repaired = check.expectNoThrow("load drops invalid presets") { try PresetStore(url: storeURL).load() }
-check.expectEqual(repaired?.presets.count ?? -1, 1, "invalid preset dropped")
+check.expectEqual(repaired?.presets.count ?? -1, 5, "invalid preset dropped, built-ins kept")
 check.expectEqual(repaired?.preset(id: "broken"), nil, "broken preset removed")
 check.expectEqual(repaired?.preset(id: "good")?.name ?? "", "Good", "valid preset kept")
 check.expectEqual(repaired?.active ?? "", PresetLibrary.autoID, "dangling active repaired to auto")
+
+// A version 1 file: an untouched built-in copy is dropped, an edited one becomes a user preset the active
+// selection follows, and the file is rewritten with only the user's presets.
+let legacyJSON = """
+{"version":1,"active":"performance","presets":[
+{"id":"silent","name":"Silent","input":"max","points":[{"t":50,"p":0},{"t":70,"p":15},{"t":85,"p":45},{"t":95,"p":100}]},
+{"id":"performance","name":"Custom","input":"max","points":[{"t":43,"p":0},{"t":55,"p":15},{"t":84,"p":100}]},
+{"id":"custom","name":"Mine","input":"max","points":[{"t":30,"p":10},{"t":80,"p":90}]}]}
+"""
+try? legacyJSON.data(using: .utf8)!.write(to: storeURL)
+let migrated = check.expectNoThrow("load migrates a version 1 file") { try PresetStore(url: storeURL).load() }
+check.expectEqual(migrated?.presets.count ?? 0, 6, "the built-ins plus both user presets")
+check.expectEqual(migrated?.preset(id: "silent")?.points ?? [], defaults.preset(id: "silent")?.points ?? [],
+                  "an untouched built-in copy is dropped")
+check.expectEqual(migrated?.preset(id: "performance")?.name ?? "", "Performance", "the built-in comes back")
+check.expectEqual(migrated?.preset(id: "custom-1")?.points ?? [], [
+    CurvePoint(t: 43, p: 0), CurvePoint(t: 55, p: 15), CurvePoint(t: 84, p: 100),
+], "the edited copy becomes a user preset")
+check.expectEqual(migrated?.preset(id: "custom-1")?.name ?? "", "Custom", "the edited copy keeps its name")
+check.expectEqual(migrated?.active ?? "", "custom-1", "the active selection follows the edited copy")
+check.expectEqual(migrated?.preset(id: "custom")?.name ?? "", "Mine", "the user preset is kept")
+let reloadedMigration = check.expectNoThrow("reload after migration") { try PresetStore(url: storeURL).load() }
+check.expectEqual(reloadedMigration, migrated, "migration is idempotent")
+check.expectEqual(reloadedMigration?.version ?? 0, 2, "the file is rewritten as version 2")
 
 try? FileManager.default.removeItem(at: tmpRoot)
 
@@ -385,10 +449,12 @@ do {
 
     store.setTemplate("CPU {cpu}")
     store.setShowPressureDot(false)
+    store.setFanUnitsRPM(true)
     _ = check.expectNoThrow("settings save") { try store.save() }
     let reloaded = SettingsStore(url: url).load()
     check.expectEqual(reloaded.menuBarTemplate, "CPU {cpu}", "a saved template survives a reload")
     check.expectEqual(reloaded.showPressureDot, false, "a saved dot toggle survives a reload")
+    check.expectEqual(reloaded.fanUnitsRPM, true, "a saved fan unit choice survives a reload")
 
     try? Data("{ not json".utf8).write(to: url)
     check.expectEqual(SettingsStore(url: url).load(), AppSettings(), "a corrupt file loads the defaults")
@@ -397,6 +463,7 @@ do {
 
     try? Data(#"{"menuBarTemplate":"x"}"#.utf8).write(to: url)
     check.expectEqual(SettingsStore(url: url).load().showPressureDot, true, "a missing key takes its default")
+    check.expectEqual(SettingsStore(url: url).load().fanUnitsRPM, false, "fan units default to percent")
 
     try? Data(#"{"menuBarTemplate":"   "}"#.utf8).write(to: url)
     check.expectEqual(SettingsStore(url: url).load().menuBarTemplate, "   ", "a blank template is kept as written")

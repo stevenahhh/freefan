@@ -17,6 +17,14 @@ public struct Preset: Codable, Equatable, Identifiable, Sendable {
     public var curve: FanCurve { FanCurve(points: points) }
 
     public var isBuiltIn: Bool { PresetLibrary.builtInIDs.contains(id) }
+
+    /// What the editor says about the preset it cannot edit; empty for the user's own presets.
+    public var editorNote: String {
+        if id == PresetLibrary.fullID {
+            return "Both fans run at maximum speed, whatever the temperature. Duplicate it to make your own curve."
+        }
+        return isBuiltIn ? "Built-in preset. Duplicate it to make your own curve." : ""
+    }
 }
 
 public struct PresetLibrary: Codable, Equatable, Sendable {
@@ -72,6 +80,35 @@ public struct PresetLibrary: Codable, Equatable, Sendable {
 
     public func newCustomID() -> String {
         Self.freeCustomID(taken: Set(presets.map(\.id)))
+    }
+
+    /// The curve the editor offers when there is nothing to copy: zero fan up to 30 C, then a steady rise.
+    public static let starterPoints = [
+        CurvePoint(t: 30, p: 0),
+        CurvePoint(t: 50, p: 15),
+        CurvePoint(t: 70, p: 45),
+        CurvePoint(t: 95, p: 100),
+    ]
+
+    /// A preset for the editor's "new" button: a copy of `source`, or the starter curve when `source` is nil. The id
+    /// and the name are free of everything already in the library (built-ins included).
+    public func newCustomPreset(copying source: Preset?) -> Preset {
+        Preset(
+            id: newCustomID(),
+            name: freeName(based: source.map { "\($0.name) Copy" } ?? "New Preset"),
+            input: source?.input ?? .max,
+            points: source?.points ?? Self.starterPoints
+        )
+    }
+
+    public func freeName(based base: String) -> String {
+        let taken = Set(presets.map(\.name))
+        guard taken.contains(base) else { return base }
+        var number = 2
+        while taken.contains("\(base) \(number)") {
+            number += 1
+        }
+        return "\(base) \(number)"
     }
 
     /// The built-ins followed by the stored user presets. A stored preset with a built-in id is a version 1 copy:
