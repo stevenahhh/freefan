@@ -1,8 +1,8 @@
 import Foundation
 import CheckKit
-import FreeFanSMC
+import OpenFanSMC
 
-// Hardware check for the FreeFanSMC access layer. Every check prints one line; the process exits
+// Hardware check for the OpenFanSMC access layer. Every check prints one line; the process exits
 // non-zero when any assertion fails. Requires a real AppleSMC on this machine.
 
 let check = Checker("SMCCheck")
