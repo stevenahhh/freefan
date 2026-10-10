@@ -123,23 +123,22 @@ M5 Pro에서도 팬 제어가 가능하다. 이 맥에서 root 권한으로 직�
 
 ## 만든 방법
 
-- 팀: 축마다 담당자를 1명씩, 모두 8명(smc-protocol, oss-impls, sensors, helper-ipc, control-safety, overhead, ux-curves, skeptic)을 두고 별도 레인 4개(fand/fanctl 저장소 정독, Apple 문서, 오버헤드 웹 조사, 벤더·포럼 페이지 렌더링)를 더해 진행했다. 카테고리는 사용자 요청에 따라 대부분 quick과 unspecified-low를 썼고, 반박을 맡은 skeptic만 unspecified-high로 배정했다.
 - 1차 수집이 끝난 뒤 쟁점이 된 주장은 이 맥에서 직접 실행해 보고 판정했다. 비특권 쓰기, 읽기 비용, 키 속성, 센서 키 존재 여부, root 쓰기 프로브(관리자 암호 1회)가 그 대상이다.
 - 토론은 3라운드였다. 실행 결과가 뒤집은 주장은 두 가지다. 하나는 "M5 Pro와 macOS 27에서는 임의 RPM이 안 된다"는 주장이고, 다른 하나는 "Tg는 읽기 전용이다"라는 fand의 결론이다. 반면 실행 과정에서 새로 발견한 사실도 있다. md=1만 쓰면 팬이 멈춘다.
-- 조사 저널(brief, claim-graph, debate-log, sources-ledger, 검증 로그)은 로컬 리서치 세션에 보관한다.
+- 조사 과정의 원본 기록(팀원별 보고, 출처 목록, 검증 로그)은 이 저장소에 포함하지 않는다.
 
 ## 검증 기록
 
-- [V1] verify-root-write-probe.md: root 쓰기 프로브, Mac17,9 / macOS 27.0.1, 쓰기 9회(MEASURED)
-- [V2] [Source 3]과 대조한 verify-unprivileged-write.md: 비특권 쓰기 거부 `0xe00002c1`, ad-hoc 읽기 성공
-- [V3] verify-smc-read-cost.md: 읽기 CPU 10µs / 벽시계 110µs
-- [V4] verify-key-attributes.md: keyInfo attr 덤프
-- [V5] observation O57: Stats M5 센서 키가 이 맥에 있는지 확인
-- [A2]~[A7]: wave-1-member-*.md (팀원별 보고. A3, A4, A6에는 현지 실험이 포함됨)
+- [V1] root 쓰기 프로브: Mac17,9 / macOS 27.0.1, 쓰기 9회(MEASURED)
+- [V2] [Source 3]과 대조한 비특권 쓰기 검증: 쓰기 거부 `0xe00002c1`, ad-hoc 읽기 성공
+- [V3] 읽기 비용 측정: 읽기 CPU 10µs / 벽시계 110µs
+- [V4] 키 속성 측정: keyInfo attr 덤프
+- [V5] Stats가 쓰는 M5 센서 키가 이 맥에 있는지 확인
+- [A2]~[A7]: 조사 중 팀원별 보고서(A3, A4, A6에는 현지 실험이 포함됨). 이 저장소에는 포함하지 않는다
 
 ## Sources
 
-번호는 `sources-ledger.md`를 따른다. 주요 출처:
+번호는 조사 중 작성한 출처 목록을 따르며, 이 저장소에는 주요 출처만 싣는다. 주요 출처:
 - [Source 3] https://github.com/exelban/stats/blob/e27b499f42ad5117777a11a3c6b29b7f0f4ae758/SMC/smc.swift
 - [Source 5] https://github.com/exelban/stats/commit/fb95e33cb6
 - [Source 7] https://github.com/yolo-labz/fand/tree/a9930b516fe1898f607529610876912538e35097
