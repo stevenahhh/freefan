@@ -30,7 +30,8 @@ final class CurveLiveMarker {
         text.alignmentMode = .left
         text.truncationMode = .none
         pill.addSublayer(text)
-        for layer in allLayers {
+        text.actions = Self.noAnimations
+        for layer in shapeLayers {
             layer.actions = Self.noAnimations
             layer.isHidden = true
         }
