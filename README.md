@@ -50,17 +50,24 @@ Hovering the **?** in the footer explains the editor: drag a point to move it, d
 space to add one, right-click a point to remove it, and built-in presets have to be duplicated before
 they can be changed. The **☰** menu next to it installs or uninstalls the helper and quits the app.
 
-## Xcode canvas
+## Xcode canvas and preview host
 
-The popover is previewable in Xcode's canvas. Open the package (**File ▸ Open…** on `Package.swift`), choose the
-**FreeFan** scheme, open `Sources/FreeFan/Previews.swift` and switch the canvas on with **Editor ▸ Canvas** (a
-**Resume** button appears if the canvas is paused). Three variants are declared: the popover, plus light and dark
-appearances.
+The popover is previewable in Xcode's canvas. Open the package (**File ▸ Open…** on `Package.swift`), open
+`Sources/FreeFanUI/Previews.swift` and switch the canvas on with **Editor ▸ Canvas** (a **Resume** button appears
+if the canvas is paused). Three variants are declared: the popover, plus light and dark appearances.
 
-The previews build a throwaway store under the temporary directory, so the canvas never reads or writes the real
-`settings.json` / `presets.json`, and the helper is not involved. `#Preview` expands through macro plugins that
-only ship with Xcode, so `scripts/build-app.sh` prefers the Xcode toolchain when it is installed; with only the
-Command Line Tools, remove `Sources/FreeFan/Previews.swift` before building.
+Previews need the UI in a library target: Xcode refuses to preview an executable target unless the project sets
+`ENABLE_DEBUG_DYLIB`, which a Swift package cannot express, so the popover lives in `FreeFanUI` and the `FreeFan`
+executable is only the menu bar item and the helper client.
+
+For a plain window rather than the canvas, run the **FreeFanPreview** scheme (⌘R): it hosts the same controller
+with sample data, which pairs well with **Debug ▸ View Debugging ▸ Capture View Hierarchy**. Both preview paths
+use a throwaway store under the temporary directory, so they never read or write the real `settings.json` or
+`presets.json`, and neither involves the helper.
+
+`#Preview` expands through macro plugins that only ship with Xcode, so `scripts/build-app.sh` prefers the Xcode
+toolchain when it is installed; with only the Command Line Tools, remove `Sources/FreeFanUI/Previews.swift`
+before building.
 
 ## Layout
 
@@ -70,7 +77,9 @@ Command Line Tools, remove `Sources/FreeFan/Previews.swift` before building.
 | `Sources/FreeFanCore` | fan curve, preset store, socket protocol |
 | `Sources/FreeFanControl` | the decision engine (hysteresis, dead band, panic) |
 | `Sources/FreeFanHelper` | the root daemon: socket, lease watchdog, control tick, sleep handling |
-| `Sources/FreeFan` | the menu bar app, its popover and the curve editor |
+| `Sources/FreeFanUI` | the popover and its views, plus the preview harness |
+| `Sources/FreeFan` | the menu bar app: status item, telemetry, helper client |
+| `Sources/FreeFanPreview` | a window that hosts the popover with sample data |
 | `Sources/*Check` | executable checks (XCTest is unavailable with Command Line Tools only) |
 | `docs/SPEC.md` | the researched implementation spec |
 | `docs/HARDWARE-VERIFICATION.md` | measured evidence on the target machine |
