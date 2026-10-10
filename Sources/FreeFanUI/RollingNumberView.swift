@@ -65,6 +65,7 @@ final class RollingNumberView: NSView {
         guard newText != text else { return }
         let old = Array(text)
         let new = Array(newText)
+        let animates = animated && !old.isEmpty
         let rising = Self.number(in: newText) > Self.number(in: text)
         text = newText
         generation += 1
@@ -83,7 +84,7 @@ final class RollingNumberView: NSView {
             let newCharacter = String(new[index])
             widths[index] = Self.width(of: newCharacter, font: font)
             column.incoming.text = newCharacter
-            guard animated, oldCharacter != newCharacter else { continue }
+            guard animates, oldCharacter != newCharacter else { continue }
             roll(column, from: oldCharacter, rising: rising, delay: Double(rolled) * Self.stagger)
             rolled += 1
         }

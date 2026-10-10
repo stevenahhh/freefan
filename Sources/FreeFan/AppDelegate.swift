@@ -21,12 +21,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var latestReading: SensorReading?
     private var latestFans: [FanInfo] = []
     private var latestPressure: MemoryPressure?
+    private var pressureMonitor: MemoryPressureMonitor?
     private var helperMessage: String?
     private var lastTitle = ""
     private var shownPressure: MemoryPressure?
     private var shownAppearance: NSAppearance.Name?
     private var dotImages: [MemoryPressure: NSImage] = [:]
     private var currentInterval: TimeInterval = 0
+
+    /// The helper drops control after 12 s of silence, so a running curve is pinged at least twice within that.
+    private static let heartbeatInterval: TimeInterval = 5
+
+    /// What the popover shows; the fans' target speeds are not on it.
+    private static let popoverSensors: SensorSet = [.cpu, .gpu, .battery, .fans]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = try? store.load()
@@ -43,7 +50,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         lastTitle = "--"
 
-        startTelemetry()
+        latestPressure = MemoryPressure.read()
+        pressureMonitor = MemoryPressureMonitor { [weak self] level in
+            guard let self else { return }
+            self.latestPressure = level
+            self.refreshStatusItem()
+            self.popoverController?.update(self.snapshot())
+        }
+        refreshStatusItem()
+        startTimer()
 
         smcQueue.async { [weak self] in
             guard let self else { return }
@@ -81,43 +96,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.mainMenu = mainMenu
     }
 
-    private func startTelemetry() {
+    private func startTimer() {
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.setEventHandler { [weak self] in self?.tick() }
-        self.timer = timer
-        updateInterval(force: true)
         timer.resume()
+        self.timer = timer
+        updateTimer()
     }
 
-    private func updateInterval(force: Bool = false) {
+    private var menuBarSensors: SensorSet {
+        MenuBarTemplate.sensors(in: settingsStore.settings.menuBarTemplate)
+    }
+
+    /// How often there is something to do: an open popover wants fresh readings every second, the menu bar text its
+    /// sensors every three, a running curve its heartbeat every five. With none of those the app has no timer at all
+    /// (0), and memory pressure reaches it by notification.
+    private func desiredInterval() -> TimeInterval {
+        if popover?.isShown == true { return 1 }
+        if !menuBarSensors.isEmpty { return 3 }
+        return store.library.activePreset == nil ? 0 : Self.heartbeatInterval
+    }
+
+    private func updateTimer() {
         guard let timer else { return }
-        let interval: TimeInterval = popover?.isShown == true ? 1.0 : 3.0
-        if !force && interval == currentInterval { return }
+        let interval = desiredInterval()
+        guard interval != currentInterval else { return }
         currentInterval = interval
-        let leeway = DispatchTimeInterval.milliseconds(Int(interval * 1000 * 0.2))
-        timer.schedule(deadline: .now() + interval, repeating: interval, leeway: leeway)
+        if interval == 0 {
+            timer.schedule(deadline: .distantFuture)
+        } else {
+            timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(Int(interval * 200)))
+        }
     }
 
     private func tick() {
+        let isOpen = popover?.isShown == true
+        let sensors = isOpen ? Self.popoverSensors : menuBarSensors
+        guard isOpen || !sensors.isEmpty else {
+            if helper.isControlling { helper.keepAlive() }
+            return
+        }
         smcQueue.async { [weak self] in
             guard let self else { return }
-            let reading = self.telemetry?.read()
+            let reading = self.telemetry?.read(sensors)
             let fans = self.telemetry?.fans ?? []
-            let pressure = MemoryPressure.read()
-            _ = self.helper.refreshStatus()
-            if self.helper.isControlling {
-                self.helper.keepAlive()
-            }
+            if isOpen { _ = self.helper.refreshStatus() }
+            if self.helper.isControlling { self.helper.keepAlive() }
             DispatchQueue.main.async {
-                self.apply(reading: reading, fans: fans, pressure: pressure)
+                self.apply(reading: reading, fans: fans)
             }
         }
     }
 
-    private func apply(reading: SensorReading?, fans: [FanInfo], pressure: MemoryPressure?) {
+    /// A full reading and the helper's status, taken synchronously (a millisecond or two) so a popover that was closed,
+    /// and so not being refreshed, opens with current numbers instead of rolling in from nothing.
+    private func refreshNow() {
+        let (reading, fans) = smcQueue.sync { (telemetry?.read(Self.popoverSensors), telemetry?.fans ?? []) }
         latestReading = reading
         latestFans = fans
-        latestPressure = pressure
+        _ = helper.refreshStatus()
+    }
+
+    private func apply(reading: SensorReading?, fans: [FanInfo]) {
+        latestReading = reading
+        latestFans = fans
 
         refreshStatusItem()
         popoverController?.update(snapshot())
@@ -128,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func refreshStatusItem() {
         let settings = settingsStore.settings
         let values = MenuBarValues(reading: latestReading, presetName: store.library.activePreset?.name ?? "Auto")
-        let title = latestReading == nil ? "--" : MenuBarTemplate.render(settings.menuBarTemplate, values)
+        let title = latestReading == nil && !menuBarSensors.isEmpty ? "--" : MenuBarTemplate.render(settings.menuBarTemplate, values)
         let dot = settings.showPressureDot ? latestPressure : nil
         let appearance = statusItem.button?.effectiveAppearance.name
         guard title != lastTitle || dot != shownPressure || appearance != shownAppearance else { return }
@@ -166,17 +208,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.contentViewController = controller
         self.popover = popover
         _ = controller.view
+        refreshNow()
         controller.update(snapshot())
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         NSApp.activate()
-        updateInterval()
+        updateTimer()
     }
 
     func popoverDidClose(_ notification: Notification) {
         popover?.contentViewController = nil
         popover = nil
         popoverController = nil
-        updateInterval()
+        updateTimer()
     }
 
     private func popoverActions() -> PopoverActions {
@@ -184,8 +227,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             presetsChanged: { [weak self] in
                 self?.applyActivePreset()
                 self?.refreshStatusItem()
+                self?.updateTimer()
             },
-            settingsChanged: { [weak self] in self?.refreshStatusItem() },
+            settingsChanged: { [weak self] in
+                self?.refreshStatusItem()
+                self?.updateTimer()
+            },
             installHelper: { [weak self] in self?.runHelperAction(install: true) },
             uninstallHelper: { [weak self] in self?.runHelperAction(install: false) },
             quit: { [weak self] in self?.quit() }

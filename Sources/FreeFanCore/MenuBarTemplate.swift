@@ -44,6 +44,23 @@ public enum MenuBarTemplate {
     public static let tokens = ["max", "cpu", "gpu", "bat", "rpm", "rpm0", "rpm1", "preset"]
     public static let maxRenderedLength = 40
 
+    /// The sensor groups the template's tokens need, so a closed popover reads only those (none at all for a
+    /// template without sensor tokens, empty included).
+    public static func sensors(in template: String) -> SensorSet {
+        var needed: SensorSet = []
+        for token in tokens where template.contains("{\(token)}") {
+            switch token {
+            case "max": needed.formUnion([.cpu, .gpu])
+            case "cpu": needed.insert(.cpu)
+            case "gpu": needed.insert(.gpu)
+            case "bat": needed.insert(.battery)
+            case "rpm", "rpm0", "rpm1": needed.insert(.fans)
+            default: break
+            }
+        }
+        return needed
+    }
+
     public static func render(_ template: String, _ values: MenuBarValues) -> String {
         var result = ""
         var index = template.startIndex

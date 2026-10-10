@@ -434,6 +434,13 @@ do {
     let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
     check.expectEqual(r(String(repeating: family, count: 50)), String(repeating: family, count: MenuBarTemplate.maxRenderedLength), "the cap never splits an emoji family")
     check.expectEqual(r(String(repeating: "\u{C628}\u{B3C4}", count: 30)).count, MenuBarTemplate.maxRenderedLength, "CJK text is capped by characters")
+
+    check.expectEqual(MenuBarTemplate.sensors(in: ""), [], "an empty template needs no sensor")
+    check.expectEqual(MenuBarTemplate.sensors(in: "{preset}"), [], "the preset name needs no sensor")
+    check.expectEqual(MenuBarTemplate.sensors(in: AppSettings.defaultTemplate), [.cpu, .gpu, .fans], "the default template reads CPU, GPU and the fans")
+    check.expectEqual(MenuBarTemplate.sensors(in: "{bat}"), [.battery], "battery needs the battery sensors only")
+    check.expectEqual(MenuBarTemplate.sensors(in: "{cpu} {rpm0}"), [.cpu, .fans], "each token adds its own group")
+    check.expectEqual(MenuBarTemplate.sensors(in: "{nope}{cpu"), [], "an unknown or unclosed token needs nothing")
 }
 
 // MARK: - Settings store

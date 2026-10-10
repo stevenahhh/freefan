@@ -47,7 +47,7 @@ private enum WriteGuardError: Error, CustomStringConvertible {
 /// The daemon: owns the SMC connection, the controller, the socket server, the tick timer, the lease
 /// and the sleep/signal handling. Everything after start() runs on `queue`.
 final class HelperDaemon {
-    /// The app pings every 3-4 s while it controls; this much silence means the app is gone.
+    /// The app pings every 5 s while it controls; this much silence means the app is gone.
     private static let leaseNanoseconds: UInt64 = 12_000_000_000
 
     private let options: HelperOptions
