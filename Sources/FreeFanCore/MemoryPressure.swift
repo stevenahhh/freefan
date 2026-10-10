@@ -8,7 +8,7 @@ public enum MemoryPressure: Int, CaseIterable, Sendable {
     case critical = 4
 
     /// The current level, or nil when the sysctl fails or reports a value that is not one of the three states.
-    /// One sysctl call; cheap enough for every telemetry tick.
+    /// One sysctl call.
     public static func read() -> MemoryPressure? {
         var level: Int32 = 0
         var size = MemoryLayout<Int32>.size
@@ -23,5 +23,20 @@ public enum MemoryPressure: Int, CaseIterable, Sendable {
         case .warning: return "Warning"
         case .critical: return "Critical"
         }
+    }
+}
+
+/// Calls back when the system changes its memory pressure level, so nothing has to poll for it.
+public final class MemoryPressureMonitor {
+    private let source: DispatchSourceMemoryPressure
+
+    public init(queue: DispatchQueue = .main, onChange: @escaping (MemoryPressure?) -> Void) {
+        source = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: queue)
+        source.setEventHandler { onChange(MemoryPressure.read()) }
+        source.resume()
+    }
+
+    deinit {
+        source.cancel()
     }
 }
