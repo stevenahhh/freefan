@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import FreeFanCore
 import FreeFanSMC
 
@@ -35,8 +34,7 @@ final class PopoverViewController: NSViewController {
     private let store: PresetStore
     private let settings: SettingsStore
     private let actions: PopoverActions
-    private let headerModel = HeaderModel()
-    private lazy var header = NSHostingView(rootView: HeaderContent(model: headerModel))
+    private let header = TelemetryHeaderView()
     private let warningLabel = NSTextField(wrappingLabelWithString: "")
     private let slider = PresetSliderView(width: Layout.inner)
     private let editor: CurveEditorPanel
@@ -53,8 +51,8 @@ final class PopoverViewController: NSViewController {
         self.editor = CurveEditorPanel(store: store, width: Layout.inner)
         self.settingsPanel = SettingsPanel(settings: settings, width: Layout.inner)
         super.init(nibName: nil, bundle: nil)
-        headerModel.showsRPM = settings.settings.fanUnitsRPM
-        headerModel.onUnitsChanged = { [weak self] showsRPM in
+        header.setShowsRPM(settings.settings.fanUnitsRPM, notify: false)
+        header.onUnitsChanged = { [weak self] showsRPM in
             guard let self else { return }
             self.settings.setFanUnitsRPM(showsRPM)
             self.saveSettings()
@@ -141,7 +139,7 @@ final class PopoverViewController: NSViewController {
         warningLabel.isHidden = warning == nil
 
         let readout = HeaderReadout(reading: snapshot.reading, fans: snapshot.fans)
-        if headerModel.readout != readout { headerModel.readout = readout }
+        header.update(readout)
         footer.update(pressure: snapshot.pressure)
 
         settingsPanel.update(values: MenuBarValues(reading: snapshot.reading, presetName: store.library.activePreset?.name ?? "Auto"))
