@@ -42,6 +42,16 @@ own Mac, and open a pull request with the hardware template. One model per pull 
 - The description follows the template. CI builds the package and runs `CoreCheck` and `ControlCheck`; it has to pass.
 - Say what you ran and what you saw. "Should work" is not a result.
 
+## Versions and releases
+
+Versions are `MAJOR.MINOR` and nothing else: 1.0, 1.1, 1.2, and 2.0 for a change that breaks something users have
+(the preset file format, the helper protocol). A fix is a new minor version too; there is no patch number.
+
+`Resources/Info.plist` is the only place the version lives. A release changes two keys there in its own commit:
+`CFBundleShortVersionString` to the new version (it is what the footer menu shows) and `CFBundleVersion` to the
+previous value plus one. The release is then the tag `v<version>` on that commit (`v1.1`) and a GitHub release
+named `OpenFan <version>`; the app is source-only, so no binary is attached.
+
 ## Reporting a problem
 
 Open an issue with your Mac model, macOS version and the `OpenFanProbe` output. For a security problem do not open a
