@@ -10,7 +10,7 @@ final class PresetSliderView: NSView {
     private static let maxChipWidth: CGFloat = 150
 
     private let fixedWidth: CGFloat
-    private let scrollView = NSScrollView()
+    private let scrollView = SliderScrollView()
     private let content = FlippedView()
     private let indicator = FlippedView()
     private let newButton = NSButton()
@@ -75,14 +75,20 @@ final class PresetSliderView: NSView {
     }
 
     /// Vertical wheel and trackpad deltas move the row, so a mouse works without a horizontal gesture.
-    override func scrollWheel(with event: NSEvent) {
-        let delta = abs(event.scrollingDeltaX) >= abs(event.scrollingDeltaY) ? event.scrollingDeltaX : event.scrollingDeltaY
-        let clip = scrollView.contentView
-        let limit = max(content.frame.width - clip.bounds.width, 0)
-        let x = min(max(clip.bounds.origin.x - delta, 0), limit)
-        guard x != clip.bounds.origin.x else { return super.scrollWheel(with: event) }
-        clip.scroll(to: NSPoint(x: x, y: 0))
-        scrollView.reflectScrolledClipView(clip)
+    private final class SliderScrollView: NSScrollView {
+        override func scrollWheel(with event: NSEvent) {
+            guard abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) else {
+                return super.scrollWheel(with: event)
+            }
+            let clip = contentView
+            let limit = max((documentView?.frame.width ?? 0) - clip.bounds.width, 0)
+            guard limit > 0 else { return super.scrollWheel(with: event) }
+            // A wheel notch down walks towards the later presets, like a vertical list would.
+            let x = min(max(clip.bounds.origin.x + event.scrollingDeltaY, 0), limit)
+            guard x != clip.bounds.origin.x else { return super.scrollWheel(with: event) }
+            clip.scroll(to: NSPoint(x: x, y: 0))
+            reflectScrolledClipView(clip)
+        }
     }
 
     private func rebuild(library: PresetLibrary) {
