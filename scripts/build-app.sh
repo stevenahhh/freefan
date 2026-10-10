@@ -11,6 +11,13 @@ CONTENTS_DIR="${BUNDLE_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
+# The app target carries #Preview harnesses, whose macro plugins only ship with Xcode, so prefer that toolchain
+# whenever it is installed and the active developer directory is not already pointing at it.
+if ! xcode-select -p 2>/dev/null | grep -q "Xcode.app" && [ -d /Applications/Xcode.app/Contents/Developer ]; then
+    export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+    echo "Using the Xcode toolchain for #Preview support"
+fi
+
 # Clean up any previous build
 rm -rf "${BUNDLE_DIR}"
 
