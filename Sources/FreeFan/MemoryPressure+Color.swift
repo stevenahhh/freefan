@@ -10,4 +10,12 @@ extension MemoryPressure {
         case .critical: return NSColor(srgbRed: 1, green: 0.231, blue: 0.188, alpha: 1)
         }
     }
+
+    func dotImage(size: CGFloat = 9) -> NSImage {
+        NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            self.dotColor.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            return true
+        }
+    }
 }
