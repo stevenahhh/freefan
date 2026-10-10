@@ -15,17 +15,17 @@ if [[ -z "${AUTHORIZED_UID}" ]]; then
 fi
 
 # Constants from Protocol.swift HelperPaths
-LABEL="com.stevenahhh.freefan.helper"
-SOCKET_PATH="/var/run/com.stevenahhh.freefan.sock"
-TOOL_PATH="/Library/PrivilegedHelperTools/com.stevenahhh.freefan.helper"
-PLIST_PATH="/Library/LaunchDaemons/com.stevenahhh.freefan.helper.plist"
-LOG_PATH="/var/log/com.stevenahhh.freefan.helper.log"
+LABEL="com.stevenahhh.openfan.helper"
+SOCKET_PATH="/var/run/com.stevenahhh.openfan.sock"
+TOOL_PATH="/Library/PrivilegedHelperTools/com.stevenahhh.openfan.helper"
+PLIST_PATH="/Library/LaunchDaemons/com.stevenahhh.openfan.helper.plist"
+LOG_PATH="/var/log/com.stevenahhh.openfan.helper.log"
 
 # Helper binary source (default: script's sibling in app bundle Resources)
-HELPER_SOURCE="${HELPER_SOURCE:-$(dirname "${BASH_SOURCE[0]}")/FreeFanHelper}"
+HELPER_SOURCE="${HELPER_SOURCE:-$(dirname "${BASH_SOURCE[0]}")/OpenFanHelper}"
 
 if [[ ! -f "${HELPER_SOURCE}" ]]; then
-    echo "Error: FreeFanHelper not found at ${HELPER_SOURCE}" >&2
+    echo "Error: OpenFanHelper not found at ${HELPER_SOURCE}" >&2
     exit 1
 fi
 

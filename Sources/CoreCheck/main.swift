@@ -1,9 +1,9 @@
 import Foundation
 import CheckKit
-import FreeFanCore
-import FreeFanSMC
+import OpenFanCore
+import OpenFanSMC
 
-// Executable check for FreeFanCore: fan curve model, preset store and helper wire protocol.
+// Executable check for OpenFanCore: fan curve model, preset store and helper wire protocol.
 // XCTest / Swift Testing are unavailable on a Command Line Tools only install, so this binary
 // exits non-zero on any failed assertion.
 
@@ -152,7 +152,7 @@ check.expectEqual(copyOfBuiltIn.editorNote, "", "a user preset has no note")
 // MARK: - PresetStore
 
 let tmpRoot = FileManager.default.temporaryDirectory
-    .appendingPathComponent("FreeFanCoreCheck-\(UUID().uuidString)")
+    .appendingPathComponent("OpenFanCoreCheck-\(UUID().uuidString)")
 try? FileManager.default.createDirectory(at: tmpRoot, withIntermediateDirectories: true)
 let storeURL = tmpRoot.appendingPathComponent("nested/presets.json")
 let bakURL = URL(fileURLWithPath: storeURL.path + ".bak")
@@ -376,7 +376,7 @@ do {
 }
 
 do {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("freefan-corecheck-v1-\(UUID().uuidString)")
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("openfan-corecheck-v1-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: root) }
     let url = root.appendingPathComponent("presets.json")
     _ = try? PresetStore(url: url).load()
@@ -462,7 +462,7 @@ do {
 // MARK: - Settings store
 
 do {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("freefan-settings-\(UUID().uuidString)")
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("openfan-settings-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: root) }
     let url = root.appendingPathComponent("settings.json")
 

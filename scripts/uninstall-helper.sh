@@ -8,10 +8,10 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 # Constants from Protocol.swift HelperPaths
-LABEL="com.stevenahhh.freefan.helper"
-SOCKET_PATH="/var/run/com.stevenahhh.freefan.sock"
-TOOL_PATH="/Library/PrivilegedHelperTools/com.stevenahhh.freefan.helper"
-PLIST_PATH="/Library/LaunchDaemons/com.stevenahhh.freefan.helper.plist"
+LABEL="com.stevenahhh.openfan.helper"
+SOCKET_PATH="/var/run/com.stevenahhh.openfan.sock"
+TOOL_PATH="/Library/PrivilegedHelperTools/com.stevenahhh.openfan.helper"
+PLIST_PATH="/Library/LaunchDaemons/com.stevenahhh.openfan.helper.plist"
 
 echo "Unloading daemon..."
 launchctl bootout "system/${LABEL}" 2>/dev/null || true

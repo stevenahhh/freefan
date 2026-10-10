@@ -4,24 +4,24 @@ import PackageDescription
 let v5: [SwiftSetting] = [.swiftLanguageMode(.v5)]
 
 let package = Package(
-    name: "FreeFan",
+    name: "OpenFan",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "FreeFan", targets: ["FreeFan"]),
-        .executable(name: "FreeFanHelper", targets: ["FreeFanHelper"]),
+        .executable(name: "OpenFan", targets: ["OpenFan"]),
+        .executable(name: "OpenFanHelper", targets: ["OpenFanHelper"]),
     ],
     targets: [
-        .target(name: "FreeFanSMC", swiftSettings: v5),
-        .target(name: "FreeFanCore", dependencies: ["FreeFanSMC"], swiftSettings: v5),
-        .target(name: "FreeFanControl", dependencies: ["FreeFanSMC", "FreeFanCore"], swiftSettings: v5),
+        .target(name: "OpenFanSMC", swiftSettings: v5),
+        .target(name: "OpenFanCore", dependencies: ["OpenFanSMC"], swiftSettings: v5),
+        .target(name: "OpenFanControl", dependencies: ["OpenFanSMC", "OpenFanCore"], swiftSettings: v5),
         .target(name: "CheckKit", swiftSettings: v5),
-        .executableTarget(name: "FreeFanHelper", dependencies: ["FreeFanSMC", "FreeFanCore", "FreeFanControl"], swiftSettings: v5),
-        .target(name: "FreeFanUI", dependencies: ["FreeFanSMC", "FreeFanCore"], swiftSettings: v5),
-        .executableTarget(name: "FreeFan", dependencies: ["FreeFanUI", "FreeFanSMC", "FreeFanCore", "FreeFanControl"], swiftSettings: v5),
-        .executableTarget(name: "FreeFanPreview", dependencies: ["FreeFanUI", "FreeFanSMC", "FreeFanCore"], swiftSettings: v5),
-        .executableTarget(name: "FreeFanProbe", dependencies: ["FreeFanSMC", "FreeFanCore"], swiftSettings: v5),
-        .executableTarget(name: "SMCCheck", dependencies: ["FreeFanSMC", "CheckKit"], swiftSettings: v5),
-        .executableTarget(name: "CoreCheck", dependencies: ["FreeFanCore", "CheckKit"], swiftSettings: v5),
-        .executableTarget(name: "ControlCheck", dependencies: ["FreeFanControl", "CheckKit"], swiftSettings: v5),
+        .executableTarget(name: "OpenFanHelper", dependencies: ["OpenFanSMC", "OpenFanCore", "OpenFanControl"], swiftSettings: v5),
+        .target(name: "OpenFanUI", dependencies: ["OpenFanSMC", "OpenFanCore"], swiftSettings: v5),
+        .executableTarget(name: "OpenFan", dependencies: ["OpenFanUI", "OpenFanSMC", "OpenFanCore", "OpenFanControl"], swiftSettings: v5),
+        .executableTarget(name: "OpenFanPreview", dependencies: ["OpenFanUI", "OpenFanSMC", "OpenFanCore"], swiftSettings: v5),
+        .executableTarget(name: "OpenFanProbe", dependencies: ["OpenFanSMC", "OpenFanCore"], swiftSettings: v5),
+        .executableTarget(name: "SMCCheck", dependencies: ["OpenFanSMC", "CheckKit"], swiftSettings: v5),
+        .executableTarget(name: "CoreCheck", dependencies: ["OpenFanCore", "CheckKit"], swiftSettings: v5),
+        .executableTarget(name: "ControlCheck", dependencies: ["OpenFanControl", "CheckKit"], swiftSettings: v5),
     ]
 )

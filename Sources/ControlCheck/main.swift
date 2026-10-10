@@ -1,8 +1,8 @@
 import Foundation
 import CheckKit
-import FreeFanControl
-import FreeFanSMC
-import FreeFanCore
+import OpenFanControl
+import OpenFanSMC
+import OpenFanCore
 
 let check = Checker("ControlCheck")
 
