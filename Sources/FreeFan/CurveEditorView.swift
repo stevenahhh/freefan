@@ -100,7 +100,7 @@ final class CurveEditorView: NSView {
     }
 
     private func renderLive() {
-        live.render(points: points, plot: plot)
+        live.render(points: points, plot: plot, suppressed: dragIndex != nil)
     }
 
     private func hitIndex(at location: NSPoint) -> Int? {
@@ -165,6 +165,7 @@ final class CurveEditorView: NSView {
             dragMoved = false
             dragOffset = NSSize(width: center.x - location.x, height: center.y - location.y)
             needsDisplay = true
+            renderLive()
             return
         }
 
@@ -195,6 +196,7 @@ final class CurveEditorView: NSView {
         }
         hoverIndex = hitIndex(at: convert(event.locationInWindow, from: nil))
         needsDisplay = true
+        renderLive()
     }
 
     override func rightMouseDown(with event: NSEvent) {
