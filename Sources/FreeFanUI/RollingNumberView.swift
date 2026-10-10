@@ -1,12 +1,13 @@
 import AppKit
 
-/// A large number whose changed characters roll the way the system's numeric text transition does: the glyph that is
-/// replaced slides out while the new one slides in, both clipped to the row and blurred as they travel, so nothing
-/// overlaps. Columns are laid out from the right of a monospaced font, so a changing digit count never shifts the
-/// digits that stayed.
+/// A large number whose changed characters roll the way the system's numeric text transition does: the replaced
+/// glyph slides away while the new one slides in from the other side, each blurring and fading as it travels. Columns
+/// are laid out from the right of a monospaced font, so a changing digit count never shifts the digits that stayed.
 final class RollingNumberView: NSView {
-    private static let duration: CFTimeInterval = 0.3
-    private static let blurRadius: CGFloat = 5
+    private static let travel: CGFloat = 0.35
+    private static let blurRadius: CGFloat = 2
+    private static let blurMargin: CGFloat = 6
+    private static let stagger: CFTimeInterval = 0.11
 
     private final class Column {
         let incoming = GlyphLayer()
@@ -17,6 +18,7 @@ final class RollingNumberView: NSView {
     private var text = ""
     private var columns: [Column] = []
     private var widths: [CGFloat] = []
+    private var generation = 0
 
     init(font: NSFont) {
         self.font = font
@@ -65,41 +67,48 @@ final class RollingNumberView: NSView {
         let new = Array(newText)
         let rising = Self.number(in: newText) > Self.number(in: text)
         text = newText
+        generation += 1
+        let current = generation
         setAccessibilityLabel(newText)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        CATransaction.setCompletionBlock { [weak self] in self?.finishRoll() }
+        CATransaction.setCompletionBlock { [weak self] in self?.finishRoll(generation: current) }
         resize(count: new.count)
         // Both strings share their right edge, so the digits that did not change stay in place.
+        var rolled = 0
         for index in 0..<new.count {
             let column = columns[index]
             let oldCharacter = index >= new.count - old.count ? String(old[index - (new.count - old.count)]) : nil
             let newCharacter = String(new[index])
             widths[index] = Self.width(of: newCharacter, font: font)
             column.incoming.text = newCharacter
-            guard animated, let oldCharacter, oldCharacter != newCharacter else {
-                column.outgoing.isHidden = true
-                continue
-            }
-            roll(column, from: oldCharacter, rising: rising)
+            guard animated, oldCharacter != newCharacter else { continue }
+            roll(column, from: oldCharacter, rising: rising, delay: Double(rolled) * Self.stagger)
+            rolled += 1
         }
         layoutColumns()
         CATransaction.commit()
         invalidateIntrinsicContentSize()
     }
 
-    private func roll(_ column: Column, from oldCharacter: String, rising: Bool) {
-        let height = max(bounds.height, 1)
+    private func roll(_ column: Column, from oldCharacter: String?, rising: Bool, delay: CFTimeInterval) {
+        let travel = (rising ? 1 : -1) * max(bounds.height, 1) * Self.travel
+        let begin = column.incoming.convertTime(CACurrentMediaTime(), from: nil) + delay
+        column.incoming.beginBlur()
+        column.incoming.add(Self.transition(from: -travel, to: 0, opacity: (0, 1), blur: (Self.blurRadius, 0), begin: begin), forKey: "roll")
+        guard let oldCharacter else { return }
         column.outgoing.text = oldCharacter
-        column.outgoing.isHidden = false
-        let travel = rising ? height : -height
-        column.incoming.add(Self.roll(from: -travel, blurFrom: Self.blurRadius, blurTo: 0), forKey: "roll")
-        column.outgoing.add(Self.roll(from: 0, to: travel, blurFrom: 0, blurTo: Self.blurRadius), forKey: "roll")
+        column.outgoing.beginBlur()
+        column.outgoing.add(Self.transition(from: 0, to: travel, opacity: (1, 0), blur: (0, Self.blurRadius), begin: begin), forKey: "roll")
     }
 
-    private func finishRoll() {
-        columns.forEach { $0.outgoing.isHidden = true }
+    private func finishRoll(generation: Int) {
+        guard generation == self.generation else { return }
+        columns.forEach { column in
+            column.incoming.endBlur()
+            column.outgoing.endBlur()
+        }
     }
 
     private func layoutColumns() {
@@ -108,7 +117,7 @@ final class RollingNumberView: NSView {
         var x = bounds.width
         for (column, width) in zip(columns, widths).reversed() {
             x -= width
-            let frame = CGRect(x: x, y: 0, width: width, height: bounds.height)
+            let frame = CGRect(x: x - Self.blurMargin, y: 0, width: width + 2 * Self.blurMargin, height: bounds.height)
             column.incoming.frame = frame
             column.outgoing.frame = frame
         }
@@ -127,8 +136,9 @@ final class RollingNumberView: NSView {
             for layer in [column.incoming, column.outgoing] {
                 layer.font = font
                 layer.contentsScale = window?.backingScaleFactor ?? 2
-                layer.isHidden = layer === column.outgoing
-                layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "hidden": NSNull()]
+                layer.needsDisplayOnBoundsChange = true
+                layer.opacity = layer === column.outgoing ? 0 : 1
+                layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "opacity": NSNull()]
             }
             layer?.addSublayer(column.incoming)
             layer?.addSublayer(column.outgoing)
@@ -137,17 +147,28 @@ final class RollingNumberView: NSView {
         }
     }
 
-    private static func roll(from: CGFloat, to: CGFloat = 0, blurFrom: CGFloat, blurTo: CGFloat) -> CAAnimationGroup {
-        let move = CABasicAnimation(keyPath: "transform.translation.y")
-        move.fromValue = from
-        move.toValue = to
-        let blur = CABasicAnimation(keyPath: "blurRadius")
-        blur.fromValue = blurFrom
-        blur.toValue = blurTo
+    /// A critically damped spring that settles in about half a second, which is SwiftUI's default animation, driving the
+    /// slide, the fade and the blur together.
+    private static func transition(from: CGFloat, to: CGFloat, opacity: (CGFloat, CGFloat), blur: (CGFloat, CGFloat), begin: CFTimeInterval) -> CAAnimationGroup {
+        let animations = [
+            ("transform.translation.y", from, to),
+            ("opacity", opacity.0, opacity.1),
+            (GlyphLayer.blurKeyPath, blur.0, blur.1),
+        ].map { keyPath, start, end -> CASpringAnimation in
+            let spring = CASpringAnimation(keyPath: keyPath)
+            spring.fromValue = start
+            spring.toValue = end
+            spring.mass = 1
+            spring.stiffness = 158
+            spring.damping = 25
+            spring.duration = spring.settlingDuration
+            return spring
+        }
         let group = CAAnimationGroup()
-        group.animations = [move, blur]
-        group.duration = duration
-        group.timingFunction = CAMediaTimingFunction(controlPoints: 0.35, 0, 0.25, 1)
+        group.animations = animations
+        group.duration = animations.map(\.duration).max() ?? 0
+        group.beginTime = begin
+        group.fillMode = .backwards
         return group
     }
 
