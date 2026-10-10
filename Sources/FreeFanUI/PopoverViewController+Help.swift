@@ -20,7 +20,8 @@ extension PopoverViewController {
             Drag a point to move it. Double-click empty space to add a point. Right-click a point to remove it.
             Built-in presets cannot be changed: duplicate one to make it yours.
             With CPU or GPU as the input, 95 \u{00B0}C or above still forces full speed.
-            A curve at 0 % hands the fans back to macOS, which stops them on a cool Mac.
+            Where a curve reaches the bottom, the fans go back to macOS (shown as Auto), which stops them on a cool Mac.
+            Speeds use the unit of the fan row: click it to switch between a percentage of top speed and rpm.
             """
     }
 }

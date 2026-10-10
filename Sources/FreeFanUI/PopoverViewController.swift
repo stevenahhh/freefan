@@ -90,6 +90,7 @@ public final class PopoverViewController: NSViewController {
             guard let self else { return }
             self.settings.setFanUnitsRPM(showsRPM)
             self.saveSettings()
+            self.refreshHeader()
         }
     }
 
@@ -181,11 +182,7 @@ public final class PopoverViewController: NSViewController {
         }
 
         let temperature = editor.activeInput.flatMap { snapshot.reading?.input($0) }
-        editor.updateLive(
-            temperature: temperature,
-            rpm: snapshot.reading?.fans.compactMap { $0.rpm }.max(),
-            fanMaxRPM: Self.maxRPM(of: snapshot)
-        )
+        editor.updateLive(temperature: temperature, speed: FanSpeedFormat(fan: snapshot.fans.first, showsRPM: header.showsRPM))
     }
 
     private func resize() {
@@ -291,11 +288,5 @@ public final class PopoverViewController: NSViewController {
         default:
             return nil
         }
-    }
-
-    private static func maxRPM(of snapshot: LiveSnapshot) -> Float? {
-        let spinning = snapshot.reading?.fans.filter { $0.rpm != nil }.max { ($0.rpm ?? 0) < ($1.rpm ?? 0) }
-        guard let fan = spinning else { return nil }
-        return snapshot.fans.first { $0.index == fan.index }?.maxRPM
     }
 }

@@ -31,6 +31,7 @@ final class CurveEditorView: NSView {
     private var hoverIndex: Int?
     private var trackingArea: NSTrackingArea?
     private let live = CurveLiveMarker()
+    private var speed = FanSpeedFormat(fan: nil, showsRPM: false)
 
     var plot: CurvePlot { CurvePlot(bounds: bounds) }
 
@@ -61,8 +62,9 @@ final class CurveEditorView: NSView {
     }
 
     /// Hands the live values to the marker; the graph itself redraws only when a displayed value changed.
-    func setLive(temperature: Float?, actualRPM: Float?, fanMaxRPM: Float?) {
-        if live.set(temperature: temperature, rpm: actualRPM, maxRPM: fanMaxRPM) {
+    func setLive(temperature: Float?, speed: FanSpeedFormat) {
+        self.speed = speed
+        if live.set(temperature: temperature, speed: speed) {
             renderLive()
         }
     }
@@ -91,7 +93,8 @@ final class CurveEditorView: NSView {
             bounds: bounds,
             isEditable: isEditable,
             dragIndex: dragIndex,
-            hoverIndex: hoverIndex
+            hoverIndex: hoverIndex,
+            speed: speed
         ).draw()
     }
 

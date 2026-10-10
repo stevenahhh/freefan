@@ -32,8 +32,10 @@ next to the name); whatever it follows, the fans go to full speed when the CPU o
 A fan column reads as a percentage of full speed until you click the fan row, which switches it to rpm;
 the choice is remembered. **Silent**, **Balanced**, **Performance** and **Full** are built in and
 cannot be edited — duplicate one to make it yours — and Full is not a curve at all: it holds both fans
-at maximum speed. A curve that reads 0 % hands the fans back to macOS, which stops them while the Mac
-is cool, so letting the fans stop needs no special setting. Your own presets live in
+at maximum speed. A curve that reaches its bottom edge hands the fans back to macOS (the graph says Auto
+there), which stops them while the Mac is cool, so letting the fans stop needs no special setting. The graph's
+readouts use the same unit as the fan row, so the speed beside the temperature on the graph is the speed in the
+header. Your own presets live in
 `~/Library/Application Support/FreeFan/presets.json` (version 2 stores only those; an older file is
 migrated on load).
 

@@ -2,7 +2,7 @@ import AppKit
 import FreeFanCore
 
 /// The once-a-second overlay on the graph: a dashed line at the current temperature, a dot on the curve, and a pill
-/// with the temperature and fan rpm. It is built from layers, so an update never redraws the graph's backing store.
+/// with the temperature and the speed the curve asks for. It is built from layers, so an update never redraws the graph's backing store.
 final class CurveLiveMarker {
     private let line = CAShapeLayer()
     private let dot = CAShapeLayer()
@@ -10,8 +10,7 @@ final class CurveLiveMarker {
     private let text = CATextLayer()
 
     private var temperature: Float?
-    private var rpm: Float?
-    private var maxRPM: Float?
+    private var speed = FanSpeedFormat(fan: nil, showsRPM: false)
 
     /// No layer property ever fades or slides: the live readout jumps to each new value.
     private static let noAnimations: [String: CAAction] = Dictionary(
@@ -55,16 +54,13 @@ final class CurveLiveMarker {
         text.contentsScale = scale
     }
 
-    /// Keeps the values as shown (0.1 C, whole rpm). Returns true when a displayed value changed.
+    /// Keeps the temperature as shown (0.1 C). Returns true when a displayed value changed.
     @discardableResult
-    func set(temperature: Float?, rpm: Float?, maxRPM: Float?) -> Bool {
+    func set(temperature: Float?, speed: FanSpeedFormat) -> Bool {
         let newTemperature = temperature.flatMap { $0.isFinite ? ($0 * 10).rounded() / 10 : nil }
-        let newRPM = rpm.flatMap { $0.isFinite && $0 >= 0 && $0 <= 1_000_000 ? $0.rounded() : nil }
-        let newMax = maxRPM.flatMap { $0.isFinite && $0 > 0 && $0 <= 1_000_000 ? $0.rounded() : nil }
-        guard newTemperature != self.temperature || newRPM != self.rpm || newMax != self.maxRPM else { return false }
+        guard newTemperature != self.temperature || speed != self.speed else { return false }
         self.temperature = newTemperature
-        self.rpm = newRPM
-        self.maxRPM = newMax
+        self.speed = speed
         return true
     }
 
@@ -107,9 +103,9 @@ final class CurveLiveMarker {
             transform: nil
         )
 
-        var label = String(format: "%.1f\u{00B0}C", temperature)
-        label += String(format: "\n%.0f%%", percent)
-        let size = CurvePill.size(for: [String(format: "%.1f\u{00B0}C", temperature), String(format: "%.0f%%", percent)])
+        let lines = [String(format: "%.1f\u{00B0}C", temperature), speed.text(forCurvePercent: percent)]
+        let label = lines.joined(separator: "\n")
+        let size = CurvePill.size(for: lines)
         var x = center.x + CurveStyle.pillOffset
         if x + size.width > bounds.maxX {
             x = center.x - CurveStyle.pillOffset - size.width
