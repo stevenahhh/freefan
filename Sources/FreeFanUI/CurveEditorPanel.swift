@@ -24,10 +24,7 @@ final class CurveEditorPanel: NSView {
     private let deleteButton = NSButton(title: "Delete", target: nil, action: nil)
     private let noteLabel = NSTextField(wrappingLabelWithString: "")
     private let errorLabel = NSTextField(labelWithString: "")
-    private let placeholder = NSTextField(wrappingLabelWithString: """
-        Auto: macOS controls the fans.
-        Choose a preset above to apply it, or duplicate one to make it yours.
-        """)
+    private let placeholder = NSTextField(wrappingLabelWithString: "")
     private let editorStack = NSStackView()
 
     private var draft: Preset?
@@ -151,9 +148,11 @@ final class CurveEditorPanel: NSView {
     }
 
     private func render() {
-        guard let draft else {
+        guard let draft, !draft.isFullSpeed else {
             editorStack.isHidden = true
             placeholder.isHidden = false
+            let message = draft?.editorNote ?? PresetLibrary.autoNote
+            if placeholder.stringValue != message { placeholder.stringValue = message }
             return
         }
         editorStack.isHidden = false
