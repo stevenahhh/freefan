@@ -112,3 +112,18 @@ swift run --scratch-path build/scratch SMCCheck
 swift run --scratch-path build/scratch CoreCheck
 swift run --scratch-path build/scratch ControlCheck
 ```
+
+## License
+
+[MIT](LICENSE): free to use, modify, distribute and sell, commercially too.
+
+There is no warranty, and this software writes to your Mac's SMC through a root helper. Read the safety model above,
+check [docs/hardware](docs/hardware/README.md) to see whether your model has been verified, and use it at your own risk.
+
+FreeFan is source-only. The app is ad-hoc signed and not notarized, so no prebuilt download is published; build it
+yourself as described above.
+
+FreeFan was written from scratch. The AppleSMC protocol and the key names were learned from open-source projects such
+as [Stats](https://github.com/exelban/stats), [SMCKit](https://github.com/beltex/SMCKit),
+[fand](https://github.com/yolo-labz/fand) and [fanctl](https://github.com/erogol/fanctl) (all MIT). No code was copied
+from them or from any other project that was read; that was checked line by line.
