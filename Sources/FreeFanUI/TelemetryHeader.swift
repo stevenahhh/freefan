@@ -17,9 +17,9 @@ struct HeaderReadout: Equatable {
     var cpu: Float?
     var gpu: Float?
     var battery: Float?
-    var fanRows: [[Fan?]] = []
+    var fanRows: [[Fan]] = []
 
-    private static let fansPerRow = 3
+    private static let maxFansPerRow = 3
 
     init() {}
 
@@ -32,10 +32,15 @@ struct HeaderReadout: Equatable {
                 rpm: reading?.fans.first { $0.index == limit.index }?.rpm,
                 maxRPM: limit.maxRPM)
         }
-        fanRows = stride(from: 0, to: fans.count, by: Self.fansPerRow).map { start in
-            let row = Array(fans[start..<min(start + Self.fansPerRow, fans.count)])
-            return row + Array(repeating: nil, count: Self.fansPerRow - row.count)
-        }
+        fanRows = Self.rows(of: fans)
+    }
+
+    /// The fewest rows of at most three fans, as even as possible, so each row's fans fill its whole width.
+    private static func rows(of fans: [Fan]) -> [[Fan]] {
+        let rowCount = (fans.count + maxFansPerRow - 1) / maxFansPerRow
+        guard rowCount > 0 else { return [] }
+        let perRow = (fans.count + rowCount - 1) / rowCount
+        return stride(from: 0, to: fans.count, by: perRow).map { Array(fans[$0..<min($0 + perRow, fans.count)]) }
     }
 }
 
@@ -73,17 +78,13 @@ private final class HeaderColumn: NSView {
         value.setText(valueText, animated: true)
         if caption.stringValue != captionText { caption.stringValue = captionText }
     }
-
-    func setPlaceholder() {
-        value.setText("", animated: false)
-        if !caption.stringValue.isEmpty { caption.stringValue = "" }
-    }
 }
 
 private final class HeaderRow: NSView {
-    private let columns = (0..<3).map { _ in HeaderColumn() }
+    private let columns: [HeaderColumn]
 
-    init() {
+    init(columnCount: Int) {
+        columns = (0..<columnCount).map { _ in HeaderColumn() }
         super.init(frame: .zero)
         let stack = NSStackView(views: columns)
         stack.orientation = .horizontal
@@ -105,12 +106,8 @@ private final class HeaderRow: NSView {
     }
 
     func set(_ cells: [(value: String, caption: String)]) {
-        for (index, column) in columns.enumerated() {
-            if index < cells.count {
-                column.set(value: cells[index].value, caption: cells[index].caption)
-            } else {
-                column.setPlaceholder()
-            }
+        for (column, cell) in zip(columns, cells) {
+            column.set(value: cell.value, caption: cell.caption)
         }
     }
 }
@@ -122,7 +119,7 @@ final class TelemetryHeaderView: NSView {
 
     private(set) var showsRPM = false
 
-    private let temperatureRow = HeaderRow()
+    private let temperatureRow = HeaderRow(columnCount: 3)
     private var fanRows: [HeaderRow] = []
     private let stack = NSStackView()
 
@@ -139,7 +136,7 @@ final class TelemetryHeaderView: NSView {
 
     func update(_ readout: HeaderReadout) {
         while fanRows.count < readout.fanRows.count {
-            makeFanRow()
+            makeFanRow(columnCount: readout.fanRows[fanRows.count].count)
         }
         temperatureRow.set([
             (Self.degrees(readout.cpu), "CPU"),
@@ -173,15 +170,14 @@ final class TelemetryHeaderView: NSView {
         ])
     }
 
-    private func makeFanRow() -> HeaderRow {
-        let row = HeaderRow()
+    private func makeFanRow(columnCount: Int) {
+        let row = HeaderRow(columnCount: columnCount)
         row.toolTip = "Click to switch the fan values between a percentage and rpm"
         let click = NSClickGestureRecognizer(target: self, action: #selector(fanRowClicked(_:)))
         row.addGestureRecognizer(click)
         fanRows.append(row)
         stack.setViews(fanRows + [temperatureRow], in: .top)
         row.widthAnchor.constraint(equalTo: temperatureRow.widthAnchor).isActive = true
-        return row
     }
 
     @objc private func fanRowClicked(_ sender: Any?) {
@@ -189,8 +185,7 @@ final class TelemetryHeaderView: NSView {
         onUnitsChanged?(showsRPM)
     }
 
-    private func fanCell(_ fan: HeaderReadout.Fan?) -> (value: String, caption: String) {
-        guard let fan else { return ("", "") }
+    private func fanCell(_ fan: HeaderReadout.Fan) -> (value: String, caption: String) {
         let value: String
         if let rpm = fan.rpm {
             value = showsRPM ? String(Int(rpm.rounded())) : "\(Int((fan.percent ?? 0).rounded()))%"
