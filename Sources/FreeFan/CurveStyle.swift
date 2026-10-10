@@ -27,19 +27,23 @@ enum CurveStyle {
 }
 
 enum CurvePill {
+    private static let lineSpacing: CGFloat = 1
+
     static var attributes: [NSAttributedString.Key: Any] {
         [.font: CurveStyle.pillFont, .foregroundColor: NSColor.labelColor]
     }
 
-    static func size(for text: String) -> NSSize {
-        let size = (text as NSString).size(withAttributes: attributes)
+    static func size(for lines: [String]) -> NSSize {
+        let sizes = lines.map { ($0 as NSString).size(withAttributes: attributes) }
+        let textWidth = sizes.map(\.width).max() ?? 0
+        let textHeight = sizes.map(\.height).reduce(0, +) + CGFloat(max(lines.count - 1, 0)) * lineSpacing
         return NSSize(
-            width: ceil(size.width) + CurveStyle.pillPaddingX * 2,
-            height: ceil(size.height) + CurveStyle.pillPaddingY * 2
+            width: ceil(textWidth) + CurveStyle.pillPaddingX * 2,
+            height: ceil(textHeight) + CurveStyle.pillPaddingY * 2
         )
     }
 
-    static func draw(_ text: String, at origin: NSPoint, size: NSSize, tint: NSColor) {
+    static func draw(_ lines: [String], at origin: NSPoint, size: NSSize, tint: NSColor) {
         let rect = NSRect(origin: origin, size: size)
         let pill = NSBezierPath(roundedRect: rect, xRadius: size.height / 2, yRadius: size.height / 2)
         NSColor.controlBackgroundColor.setFill()
@@ -47,9 +51,16 @@ enum CurvePill {
         tint.setStroke()
         pill.lineWidth = 1
         pill.stroke()
-        (text as NSString).draw(
-            at: NSPoint(x: origin.x + CurveStyle.pillPaddingX, y: origin.y + CurveStyle.pillPaddingY),
-            withAttributes: attributes
-        )
+
+        var y = origin.y + size.height - CurveStyle.pillPaddingY
+        for line in lines {
+            let lineHeight = (line as NSString).size(withAttributes: attributes).height
+            y -= lineHeight
+            (line as NSString).draw(
+                at: NSPoint(x: origin.x + CurveStyle.pillPaddingX, y: y),
+                withAttributes: attributes
+            )
+            y -= lineSpacing
+        }
     }
 }

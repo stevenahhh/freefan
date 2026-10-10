@@ -158,8 +158,8 @@ struct CurveDrawing {
     private func drawDragReadout(in plot: NSRect) {
         guard let index = dragIndex, points.indices.contains(index) else { return }
         let point = points[index]
-        let text = String(format: "%.0f\u{00B0}C   %.0f%%", point.t, point.p)
-        let size = CurvePill.size(for: text)
+        let lines = [String(format: "%.0f\u{00B0}C", point.t), String(format: "%.0f%%", point.p)]
+        let size = CurvePill.size(for: lines)
         let center = mapping.point(t: point.t, p: point.p)
         // Prefer up and to the right of the dot; flip to the other side near the plot edges.
         var x = center.x + CurveStyle.pillOffset + CurveStyle.dotRadiusActive
@@ -174,6 +174,6 @@ struct CurveDrawing {
             x: min(max(x, plot.minX), plot.maxX - size.width),
             y: min(max(y, plot.minY), plot.maxY - size.height)
         )
-        CurvePill.draw(text, at: origin, size: size, tint: .controlAccentColor)
+        CurvePill.draw(lines, at: origin, size: size, tint: .controlAccentColor)
     }
 }

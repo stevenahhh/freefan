@@ -29,6 +29,7 @@ final class CurveLiveMarker {
         text.fontSize = CurveStyle.pillFont.pointSize
         text.alignmentMode = .left
         text.truncationMode = .none
+        text.isWrapped = true
         pill.addSublayer(text)
         text.actions = Self.noAnimations
         for layer in shapeLayers {
@@ -77,9 +78,9 @@ final class CurveLiveMarker {
         text.foregroundColor = NSColor.labelColor.cgColor
     }
 
-    func render(points: [CurvePoint], plot: CurvePlot) {
+    func render(points: [CurvePoint], plot: CurvePlot, suppressed: Bool = false) {
         let bounds = plot.rect
-        let visible = temperature != nil && !points.isEmpty && bounds.width > 8 && bounds.height > 8
+        let visible = !suppressed && temperature != nil && !points.isEmpty && bounds.width > 8 && bounds.height > 8
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -107,27 +108,24 @@ final class CurveLiveMarker {
         )
 
         var label = String(format: "%.1f\u{00B0}C", temperature)
-        if let rpm {
-            label += maxRPM.map { String(format: "   %.0f / %.0f rpm", rpm, $0) } ?? String(format: "   %.0f rpm", rpm)
-        }
-        let size = CurvePill.size(for: label)
+        label += String(format: "\n%.0f%%", percent)
+        let size = CurvePill.size(for: [String(format: "%.1f\u{00B0}C", temperature), String(format: "%.0f%%", percent)])
         var x = center.x + CurveStyle.pillOffset
         if x + size.width > bounds.maxX {
             x = center.x - CurveStyle.pillOffset - size.width
         }
         pill.frame = CGRect(
             x: min(max(x, bounds.minX), bounds.maxX - size.width),
-            y: bounds.maxY - size.height - CurveStyle.pillOffset,
+            y: min(max(center.y + CurveStyle.pillOffset, bounds.minY), bounds.maxY - size.height),
             width: size.width,
             height: size.height
         )
         pill.cornerRadius = size.height / 2
-        let textSize = (label as NSString).size(withAttributes: CurvePill.attributes)
         text.frame = CGRect(
             x: CurveStyle.pillPaddingX,
             y: CurveStyle.pillPaddingY,
-            width: ceil(textSize.width) + 2,
-            height: ceil(textSize.height)
+            width: size.width - CurveStyle.pillPaddingX * 2,
+            height: size.height - CurveStyle.pillPaddingY * 2
         )
         if text.string as? String != label {
             text.string = label
