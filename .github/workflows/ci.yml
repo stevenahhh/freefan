@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build every target
+        run: swift build --scratch-path build/scratch
+      - name: CoreCheck
+        run: swift run --scratch-path build/scratch CoreCheck
+      - name: ControlCheck
+        run: swift run --scratch-path build/scratch ControlCheck
