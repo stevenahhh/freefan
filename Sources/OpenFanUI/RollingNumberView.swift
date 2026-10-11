@@ -132,10 +132,12 @@ final class RollingNumberView: NSView {
             column.outgoing.removeFromSuperlayer()
             widths.removeLast()
         }
+        let color = Self.labelColor(for: effectiveAppearance)
         while columns.count < count {
             let column = Column()
             for layer in [column.incoming, column.outgoing] {
                 layer.font = font
+                layer.textColor = color
                 layer.contentsScale = window?.backingScaleFactor ?? 2
                 layer.needsDisplayOnBoundsChange = true
                 layer.opacity = layer === column.outgoing ? 0 : 1
@@ -173,9 +175,12 @@ final class RollingNumberView: NSView {
         return group
     }
 
+    /// The label color as it looks in `appearance`, frozen. A glyph layer is drawn outside any view's drawing pass, where
+    /// a dynamic color would resolve under whatever appearance happens to be current (not the popover's), so the
+    /// layers are handed the resolved value.
     private static func labelColor(for appearance: NSAppearance) -> NSColor {
         var color = NSColor.labelColor
-        appearance.performAsCurrentDrawingAppearance { color = NSColor.labelColor }
+        appearance.performAsCurrentDrawingAppearance { color = NSColor(cgColor: NSColor.labelColor.cgColor) ?? .labelColor }
         return color
     }
 
