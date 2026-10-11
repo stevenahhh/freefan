@@ -15,7 +15,7 @@ struct CurveDrawing {
         guard plot.width > 8, plot.height > 8 else { return }
 
         let frame = NSBezierPath(roundedRect: plot, xRadius: CurveStyle.cornerRadius, yRadius: CurveStyle.cornerRadius)
-        NSColor.textBackgroundColor.setFill()
+        CurveStyle.plotBackground.setFill()
         frame.fill()
 
         NSGraphicsContext.saveGraphicsState()
