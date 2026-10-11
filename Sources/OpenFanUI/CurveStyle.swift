@@ -22,6 +22,9 @@ enum CurveStyle {
     static let pillOffset: CGFloat = 10
     static let fillAlpha: CGFloat = 0.12
     static let extensionAlpha: CGFloat = 0.55
+    /// The plot's own fill: a translucent neutral that lets the popover's glass through. An opaque white or black card
+    /// (the text background color) reads as a hole in the glass.
+    static let plotBackground = NSColor.tertiarySystemFill
     static let titleFont = NSFont.systemFont(ofSize: 11, weight: .medium)
     static let pillFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
 }
