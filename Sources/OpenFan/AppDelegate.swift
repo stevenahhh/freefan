@@ -194,9 +194,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func togglePanel(_ sender: Any?) {
-        if let panel, panel.isVisible {
+        if let panel {
+            let wasOpen = panel.isVisible
             panel.dismiss()
-            return
+            if wasOpen { return }
         }
         guard let button = statusItem.button, let buttonWindow = button.window else { return }
         let controller = PopoverViewController(store: store, settings: settingsStore, actions: panelActions())

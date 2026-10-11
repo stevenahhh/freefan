@@ -10,6 +10,8 @@ public final class MenuBarPanel: NSPanel {
     static let cornerRadius: CGFloat = 20
     private static let resizeDuration: TimeInterval = 0.2
 
+    private var isPresented = false
+    private var anchor = NSRect.zero
     private var clickMonitor: Any?
     private var deactivationObserver: NSObjectProtocol?
 
@@ -25,6 +27,8 @@ public final class MenuBarPanel: NSPanel {
         hasShadow = true
         level = .statusBar
         collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        // A panel hides while its app is inactive, and this app usually is when its status item is clicked.
+        hidesOnDeactivate = false
         animationBehavior = .utilityWindow
         isReleasedWhenClosed = false
         contentView = Self.makeBackground(hosting: content)
@@ -40,6 +44,8 @@ public final class MenuBarPanel: NSPanel {
     /// `anchor` is the status item's frame in screen coordinates.
     public func present(size: NSSize, below anchor: NSRect, on screen: NSScreen?) {
         let visible = (screen ?? NSScreen.main)?.visibleFrame ?? NSRect(origin: .zero, size: size)
+        self.anchor = anchor
+        isPresented = true
         setFrame(PanelPlacement.frame(size: size, anchor: anchor, visible: visible), display: false)
         NSApp.activate()
         makeKeyAndOrderFront(nil)
@@ -60,7 +66,8 @@ public final class MenuBarPanel: NSPanel {
     }
 
     public func dismiss() {
-        guard isVisible else { return }
+        guard isPresented else { return }
+        isPresented = false
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         if let deactivationObserver { NotificationCenter.default.removeObserver(deactivationObserver) }
         clickMonitor = nil
@@ -71,9 +78,11 @@ public final class MenuBarPanel: NSPanel {
 
     /// Only while the panel is open: a click in another app, on the desktop or on another menu bar item never reaches
     /// this app's own views, so a global monitor is the only way to see it. The app has no monitor when the panel is closed.
+    /// A click on the status item itself is left to its button, which toggles the panel.
     private func watchForDismissal() {
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-            self?.dismiss()
+            guard let self, !self.anchor.insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation) else { return }
+            self.dismiss()
         }
         deactivationObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification,
