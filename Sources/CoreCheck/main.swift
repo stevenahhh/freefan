@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 import CheckKit
 import OpenFanCore
 import OpenFanSMC
@@ -496,6 +497,31 @@ do {
 
     store.setTemplate(String(repeating: "b", count: 500))
     check.expectEqual(store.settings.menuBarTemplate.count, AppSettings.maxTemplateLength, "setTemplate cuts to the limit")
+}
+
+// MARK: - Panel placement
+
+do {
+    let menuBarBottom: CGFloat = 1076
+    let visible = CGRect(x: 0, y: 0, width: 1800, height: menuBarBottom)
+    let size = CGSize(width: 380, height: 500)
+    func place(itemX: CGFloat, on screen: CGRect = visible) -> CGRect {
+        let item = CGRect(x: itemX, y: screen.maxY, width: 60, height: 24)
+        return PanelPlacement.frame(size: size, anchor: item, visible: screen)
+    }
+
+    let middle = place(itemX: 900)
+    check.expectEqual(middle.midX, 930, "the panel is centered under its status item")
+    check.expectEqual(middle.maxY, menuBarBottom - PanelPlacement.gap, "the panel hangs a gap below the menu bar")
+    check.expectEqual(middle.size, size, "placing the panel keeps its size")
+    check.expectEqual(place(itemX: 1780).maxX, visible.maxX - PanelPlacement.margin, "near the right edge the panel stops at the margin")
+    check.expectEqual(place(itemX: 0).minX, visible.minX + PanelPlacement.margin, "near the left edge the panel stops at the margin")
+
+    let second = CGRect(x: 1800, y: 0, width: 1440, height: 900)
+    let onSecond = place(itemX: 2000, on: second)
+    check.expectEqual(onSecond.midX, 2030, "a second display's offset is respected")
+    check.expectEqual(onSecond.maxY, second.maxY - PanelPlacement.gap, "the panel follows the second display's menu bar")
+    check.expectEqual(place(itemX: 3230, on: second).maxX, second.maxX - PanelPlacement.margin, "the right margin is measured on the second display")
 }
 
 exit(check.summary())
