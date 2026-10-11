@@ -3,7 +3,7 @@ import OpenFanCore
 import OpenFanSMC
 import OpenFanUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let store = PresetStore()
     private let settingsStore = SettingsStore()
     private let helper = HelperClient()
@@ -14,8 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var telemetry: Telemetry?
 
     private var statusItem: NSStatusItem!
-    private var panel: MenuBarPanel?
-    private var panelController: PopoverViewController?
+    private var popover: NSPopover?
+    private var popoverController: PopoverViewController?
+    private var outsideClickMonitor: Any?
     private var timer: DispatchSourceTimer?
 
     private var latestReading: SensorReading?
@@ -32,8 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The helper drops control after 12 s of silence, so a running curve is pinged at least twice within that.
     private static let heartbeatInterval: TimeInterval = 5
 
-    /// What the panel shows; the fans' target speeds are not on it.
-    private static let panelSensors: SensorSet = [.cpu, .gpu, .battery, .fans]
+    /// What the popover shows; the fans' target speeds are not on it.
+    private static let popoverSensors: SensorSet = [.cpu, .gpu, .battery, .fans]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = try? store.load()
@@ -46,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
             button.imagePosition = .imageLeft
             button.target = self
-            button.action = #selector(togglePanel(_:))
+            button.action = #selector(togglePopover(_:))
         }
         lastTitle = "--"
 
@@ -55,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.latestPressure = level
             self.refreshStatusItem()
-            self.panelController?.update(self.snapshot())
+            self.popoverController?.update(self.snapshot())
         }
         refreshStatusItem()
         startTimer()
@@ -108,11 +109,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MenuBarTemplate.sensors(in: settingsStore.settings.menuBarTemplate)
     }
 
-    /// How often there is something to do: an open panel wants fresh readings every second, the menu bar text its
+    /// How often there is something to do: an open popover wants fresh readings every second, the menu bar text its
     /// sensors every three, a running curve its heartbeat every five. With none of those the app has no timer at all
     /// (0), and memory pressure reaches it by notification.
     private func desiredInterval() -> TimeInterval {
-        if panel?.isVisible == true { return 1 }
+        if popover?.isShown == true { return 1 }
         if !menuBarSensors.isEmpty { return 3 }
         return store.library.activePreset == nil ? 0 : Self.heartbeatInterval
     }
@@ -130,8 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func tick() {
-        let isOpen = panel?.isVisible == true
-        let sensors = isOpen ? Self.panelSensors : menuBarSensors
+        let isOpen = popover?.isShown == true
+        let sensors = isOpen ? Self.popoverSensors : menuBarSensors
         guard isOpen || !sensors.isEmpty else {
             helper.keepAlive()
             return
@@ -148,10 +149,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// A full reading and the helper's status, taken synchronously (a millisecond or two) so a panel that was closed,
+    /// A full reading and the helper's status, taken synchronously (a millisecond or two) so a popover that was closed,
     /// and so not being refreshed, opens with current numbers instead of rolling in from nothing.
     private func refreshNow() {
-        let (reading, fans) = smcQueue.sync { (telemetry?.read(Self.panelSensors), telemetry?.fans ?? []) }
+        let (reading, fans) = smcQueue.sync { (telemetry?.read(Self.popoverSensors), telemetry?.fans ?? []) }
         latestReading = reading
         latestFans = fans
         _ = helper.refreshStatus()
@@ -162,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         latestFans = fans
 
         refreshStatusItem()
-        panelController?.update(snapshot())
+        popoverController?.update(snapshot())
     }
 
     /// Recomputes the title and the dot from the latest readings and the settings, and touches the button only when
@@ -193,36 +194,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    @objc private func togglePanel(_ sender: Any?) {
-        if let panel {
-            let wasOpen = panel.isVisible
-            panel.dismiss()
-            if wasOpen { return }
+    @objc private func togglePopover(_ sender: Any?) {
+        if let popover, popover.isShown {
+            popover.performClose(sender)
+            return
         }
-        guard let button = statusItem.button, let buttonWindow = button.window else { return }
-        let controller = PopoverViewController(store: store, settings: settingsStore, actions: panelActions())
-        let panel = MenuBarPanel(content: controller.view)
-        controller.onPreferredSizeChange = { [weak panel] size in panel?.resize(to: size) }
-        panel.onDismiss = { [weak self] in self?.panelDidDismiss() }
-        self.panel = panel
-        panelController = controller
+        guard let button = statusItem.button else { return }
+        let controller = PopoverViewController(store: store, settings: settingsStore, actions: popoverActions())
+        popoverController = controller
+        let popover = NSPopover()
+        controller.onPreferredSizeChange = { [weak popover] size in popover?.contentSize = size }
+        popover.behavior = .transient
+        popover.delegate = self
+        popover.contentViewController = controller
+        self.popover = popover
+        _ = controller.view
         refreshNow()
         controller.update(snapshot())
-        button.highlight(true)
-        let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
-        panel.present(size: controller.preferredContentSize, below: anchor, on: buttonWindow.screen)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // The app you were in stays in front; without a key popover window Escape and outside clicks went to that app.
+        NSApp.activate()
+        controller.view.window?.makeKey()
+        watchOutsideClicks()
         updateTimer()
     }
 
-    /// The panel and its controller are dropped with it, so a closed panel leaves nothing behind in memory.
-    private func panelDidDismiss() {
-        statusItem.button?.highlight(false)
-        panel = nil
-        panelController = nil
+    /// A transient popover misses clicks on the empty menu bar while this app is inactive, so a global monitor closes it
+    /// too. It exists only while the popover is open; a click on the status item is left to its button.
+    private func watchOutsideClicks() {
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            guard let self, let button = self.statusItem.button, let window = button.window else { return }
+            let item = window.convertToScreen(button.convert(button.bounds, to: nil))
+            guard !item.insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation) else { return }
+            self.popover?.performClose(nil)
+        }
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
+        outsideClickMonitor = nil
+        popover?.contentViewController = nil
+        popover = nil
+        popoverController = nil
         updateTimer()
     }
 
-    private func panelActions() -> PopoverActions {
+    private func popoverActions() -> PopoverActions {
         PopoverActions(
             presetsChanged: { [weak self] in
                 self?.applyActivePreset()
@@ -268,7 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             helperMessage = message.isEmpty ? "Helper change failed." : message
         }
-        panelController?.update(snapshot())
+        popoverController?.update(snapshot())
     }
 
     @objc private func quitOpenFan(_ sender: Any?) {

@@ -94,7 +94,8 @@ final class CurveEditorView: NSView {
             isEditable: isEditable,
             dragIndex: dragIndex,
             hoverIndex: hoverIndex,
-            speed: speed
+            speed: speed,
+            scale: window?.backingScaleFactor ?? 2
         ).draw()
     }
 

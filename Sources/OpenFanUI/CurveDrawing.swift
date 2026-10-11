@@ -9,6 +9,8 @@ struct CurveDrawing {
     var dragIndex: Int?
     var hoverIndex: Int?
     var speed: FanSpeedFormat
+    /// Backing pixels per point: a layer-backed view draws in points, so the context cannot tell.
+    var scale: CGFloat
 
     func draw() {
         let plot = mapping.rect
@@ -34,20 +36,26 @@ struct CurveDrawing {
     }
 
     private func drawGrid(in plot: NSRect) {
-        let grid = NSBezierPath()
-        grid.lineWidth = 1
+        func crisp(_ value: CGFloat) -> CGFloat { (floor(value * scale) + 0.5) / scale }
+        let minor = NSBezierPath()
+        let major = NSBezierPath()
         for temperature in stride(from: 0.0, through: CurveGeometry.maxTemperature, by: 10) {
-            let x = mapping.point(t: temperature, p: 0).x
-            grid.move(to: NSPoint(x: x, y: plot.minY))
-            grid.line(to: NSPoint(x: x, y: plot.maxY))
+            let x = crisp(mapping.point(t: temperature, p: 0).x)
+            let path = temperature.truncatingRemainder(dividingBy: 50) == 0 ? major : minor
+            path.move(to: NSPoint(x: x, y: plot.minY))
+            path.line(to: NSPoint(x: x, y: plot.maxY))
         }
         for percent in stride(from: 0.0, through: CurveGeometry.maxPercent, by: 10) {
-            let y = mapping.point(t: 0, p: percent).y
-            grid.move(to: NSPoint(x: plot.minX, y: y))
-            grid.line(to: NSPoint(x: plot.maxX, y: y))
+            let y = crisp(mapping.point(t: 0, p: percent).y)
+            let path = percent.truncatingRemainder(dividingBy: 50) == 0 ? major : minor
+            path.move(to: NSPoint(x: plot.minX, y: y))
+            path.line(to: NSPoint(x: plot.maxX, y: y))
         }
-        NSColor.gridColor.setStroke()
-        grid.stroke()
+        for (path, color) in [(minor, CurveStyle.gridMinor), (major, CurveStyle.gridMajor)] {
+            path.lineWidth = 1 / scale
+            color.setStroke()
+            path.stroke()
+        }
     }
 
     private func drawCurve(in plot: NSRect) {

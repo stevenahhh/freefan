@@ -8,6 +8,12 @@ final class PresetSliderView: NSView {
     private static let chipHeight: CGFloat = 24
     private static let spacing: CGFloat = 3
     private static let maxChipWidth: CGFloat = 150
+    /// Close to the selected chip's label color: the system's secondary label is too faint on glass. Light and dark are
+    /// spelled out because a color derived from `labelColor` is frozen to the appearance it was made under.
+    private static let unselectedTint = NSColor(name: nil) { appearance in
+        let base = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor.white : NSColor.black
+        return base.withAlphaComponent(0.80)
+    }
 
     private let fixedWidth: CGFloat
     private let scrollView = SliderScrollView()
@@ -42,7 +48,7 @@ final class PresetSliderView: NSView {
         newButton.isBordered = false
         newButton.bezelStyle = .regularSquare
         newButton.setButtonType(.momentaryChange)
-        newButton.contentTintColor = .secondaryLabelColor
+        newButton.contentTintColor = Self.unselectedTint
         newButton.toolTip = "New preset from the current curve"
         newButton.target = self
         newButton.action = #selector(newTapped(_:))
@@ -126,7 +132,7 @@ final class PresetSliderView: NSView {
         var selected: NSRect?
         for chip in chips {
             let isSelected = chip.identifier?.rawValue == active
-            chip.contentTintColor = isSelected ? .labelColor : .secondaryLabelColor
+            chip.contentTintColor = isSelected ? .labelColor : Self.unselectedTint
             chip.font = .systemFont(ofSize: 12, weight: isSelected ? .semibold : .medium)
             if isSelected { selected = chip.frame }
         }

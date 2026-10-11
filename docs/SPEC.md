@@ -77,7 +77,7 @@ M5 Pro에서도 팬 제어가 가능하다. 이 맥에서 root 권한으로 직�
 
 ## 5. UI와 오버헤드
 
-- AppKit `NSStatusItem`과 자체 제작한 `NSPanel`(`MenuBarPanel`, 1.2부터)을 쓰고 SwiftUI MenuBarExtra는 쓰지 않는다. 패널은 열려 있는 동안에만 전역 마우스 모니터를 달고 닫히면 해제하며 컨트롤러도 버려서 닫힌 상태에는 아무것도 남기지 않는다. 패널 하나에 실시간 값, 프리셋 칩, 커브 편집기, 메뉴바 텍스트 설정 페이지가 모두 들어 있고 별도 창은 없다. 측정상 메모리는 AppKit이 13MB, MenuBarExtra가 17~21MB였고, 갱신 스파이크도 AppKit 쪽이 작았다 [A6]. MenuBarExtra는 라벨이 템플릿 이미지로만 그려지고 생명주기 버그도 있다 [Source 26].
+- AppKit `NSStatusItem`과 `NSPopover`를 쓰고 SwiftUI MenuBarExtra는 쓰지 않는다. 팝오버 하나에 실시간 값, 프리셋 칩, 커브 편집기, 메뉴바 텍스트 설정 페이지가 모두 들어 있고 별도 창은 없다. 측정상 메모리는 AppKit이 13MB, MenuBarExtra가 17~21MB였고, 갱신 스파이크도 AppKit 쪽이 작았다 [A6]. MenuBarExtra는 라벨이 템플릿 이미지로만 그려지고 생명주기 버그도 있다 [Source 26].
 - 메뉴바 제목은 기본값 `{max}° {rpm}` 템플릿(`52° 2.3k`)으로 짧게 표시하고 사용자가 `{cpu}` `{gpu}` `{bat}` `{rpm0}` `{rpm1}` `{preset}`로 바꿀 수 있다(40자 제한, `settings.json`). 앞에 Activity Monitor와 같은 기준(`kern.memorystatus_vm_pressure_level` 1/2/4 → 초록/노랑/빨강)의 메모리 압력 점을 둘 수 있다. 제목과 점은 **문자열이 바뀔 때만** 새로 설정한다. 매 틱 설정하면 0.2~3.9%, 바뀔 때만 설정하면 0.0%였다 [A6][Source 22][Source 23].
 - 계속 살아 있는 `DispatchSourceTimer` 하나를 쓴다. 팝오버가 닫혀 있으면 3초, 열려 있으면 1초 주기로 돈다. leeway는 주기의 20%로 설정해 Apple 권장치(10% 이상)를 지킨다 [Source 20]. 같은 상태 데이터를 다시 그리지 않는다.
 - 커브 편집기는 Core Graphics로 직접 그리는 `NSView`이고, 팝오버를 열 때만 만들고 닫으면 해제한다. 매초 바뀌는 실시간 표시(점선, 점, 라벨)는 다시 그리지 않고 `CALayer` 속성만 바꾼다. 매초 `draw(_:)`로 다시 그리면 그래픽 백킹 스토어가 약 70MB 남았고, 레이어로 바꾼 뒤 열린 상태 28MB, 30번 열고 닫은 뒤 26MB였다(MEASURED). Swift Charts는 쓰지 않는다(시리즈 하나에 34~90MB) [A6].
