@@ -21,13 +21,20 @@ fi
 # Clean up any previous build
 rm -rf "${BUNDLE_DIR}"
 
+# The classic build system, on purpose: the default one (Swift Build) rewrites the SDK version recorded in the linked
+# executable to the deployment target, so a binary compiled against the macOS 27 SDK claims to be linked against the
+# macOS 14 one (`vtool -show-build` says sdk 14.0). AppKit then treats the app as an old one and draws the popover in
+# the pre-Liquid-Glass material. The classic system records the SDK actually used and keeps minos at 14.0, so the
+# popover gets the system's glass, whatever the Clear or Tinted setting is.
+BUILD_SYSTEM=(--build-system native)
+
 # Build both products in release mode
 echo "Building OpenFan (app)..."
-swift build -c release --scratch-path "${SCRATCH_DIR}" --product OpenFan
+swift build "${BUILD_SYSTEM[@]}" -c release --scratch-path "${SCRATCH_DIR}" --product OpenFan
 echo "PASS: OpenFan built"
 
 echo "Building OpenFanHelper (privileged helper)..."
-swift build -c release --scratch-path "${SCRATCH_DIR}" --product OpenFanHelper
+swift build "${BUILD_SYSTEM[@]}" -c release --scratch-path "${SCRATCH_DIR}" --product OpenFanHelper
 echo "PASS: OpenFanHelper built"
 
 # SwiftPM writes release products under the scratch path: <scratch>/release/<product>
