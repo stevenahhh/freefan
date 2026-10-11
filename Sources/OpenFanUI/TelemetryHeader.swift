@@ -51,7 +51,9 @@ private final class HeaderColumn: NSView {
     private let value = RollingNumberView(font: HeaderColumn.valueFont)
     private let caption = NSTextField(labelWithString: "")
 
-    init() {
+    /// A centered column puts the value and its caption on the column's vertical axis; otherwise both sit on its
+    /// leading edge.
+    init(centered: Bool) {
         super.init(frame: .zero)
         caption.font = Self.captionFont
         caption.textColor = .secondaryLabelColor
@@ -59,11 +61,15 @@ private final class HeaderColumn: NSView {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
+        for view in [value, caption] as [NSView] {
+            NSLayoutConstraint.activate(centered
+                ? [view.centerXAnchor.constraint(equalTo: centerXAnchor),
+                   view.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor)]
+                : [view.leadingAnchor.constraint(equalTo: leadingAnchor)])
+        }
         NSLayoutConstraint.activate([
-            value.leadingAnchor.constraint(equalTo: leadingAnchor),
             value.topAnchor.constraint(equalTo: topAnchor),
             value.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
-            caption.leadingAnchor.constraint(equalTo: leadingAnchor),
             caption.topAnchor.constraint(equalTo: value.bottomAnchor),
             caption.bottomAnchor.constraint(equalTo: bottomAnchor),
             caption.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
@@ -83,8 +89,8 @@ private final class HeaderColumn: NSView {
 private final class HeaderRow: NSView {
     private let columns: [HeaderColumn]
 
-    init(columnCount: Int) {
-        columns = (0..<columnCount).map { _ in HeaderColumn() }
+    init(columnCount: Int, centered: Bool) {
+        columns = (0..<columnCount).map { _ in HeaderColumn(centered: centered) }
         super.init(frame: .zero)
         let stack = NSStackView(views: columns)
         stack.orientation = .horizontal
@@ -119,7 +125,7 @@ final class TelemetryHeaderView: NSView {
 
     private(set) var showsRPM = false
 
-    private let temperatureRow = HeaderRow(columnCount: 3)
+    private let temperatureRow = HeaderRow(columnCount: 3, centered: false)
     private var fanRows: [HeaderRow] = []
     private let stack = NSStackView()
 
@@ -171,7 +177,7 @@ final class TelemetryHeaderView: NSView {
     }
 
     private func makeFanRow(columnCount: Int) {
-        let row = HeaderRow(columnCount: columnCount)
+        let row = HeaderRow(columnCount: columnCount, centered: true)
         row.toolTip = "Click to switch the fan values between a percentage and rpm"
         let click = NSClickGestureRecognizer(target: self, action: #selector(fanRowClicked(_:)))
         row.addGestureRecognizer(click)
