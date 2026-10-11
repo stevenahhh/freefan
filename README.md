@@ -3,7 +3,7 @@
 Minimal macOS menu-bar fan control for Apple Silicon.
 
 - Live temperatures and fan speeds in the menu bar, in a format you write yourself
-- A Liquid Glass panel under the menu-bar icon with CPU, GPU and battery temperatures and one column per fan, as a percentage of full speed or in rpm (click the fan row to switch)
+- A popover with CPU, GPU and battery temperatures and one column per fan, as a percentage of full speed or in rpm (click the fan row to switch)
 - Temperature-to-speed curves edited on a graph
 - Saved presets in a horizontally scrolling row, one click away
 - Built-in presets that cannot be changed by accident, and your own on top
@@ -17,14 +17,13 @@ bash scripts/build-app.sh          # assembles and ad-hoc signs build/OpenFan.ap
 open build/OpenFan.app
 ```
 
-Then click the menu-bar item and choose **Install Helper…** in the panel footer. That asks for an
+Then click the menu-bar item and choose **Install Helper…** in the popover footer. That asks for an
 administrator password once and installs a small root daemon
 (`/Library/LaunchDaemons/com.stevenahhh.openfan.helper.plist`) which is the only process that writes
 to the SMC. Uninstall it again from the same place.
 
-The app shows `52° 2.3k` in the menu bar. Clicking it opens a panel under the icon with CPU, GPU and battery
-temperatures, one column per fan, a row of presets and the curve editor. The panel is the system's Liquid Glass and
-closes when you click anywhere else, press Esc or switch to another app. Clicking a preset activates it
+The app shows `52° 2.3k` in the menu bar. Clicking it opens a popover with CPU, GPU and battery
+temperatures, one column per fan, a row of presets and the curve editor. Clicking a preset activates it
 and shows its curve; every edit is saved when you let go of the mouse and sent to the daemon right away.
 **Auto** returns the fans to the system. "Auto" is a mode, not a preset.
 A curve follows the hottest of CPU and GPU, the CPU, the GPU or the battery average (the pop-up menu
@@ -40,7 +39,7 @@ header. Your own presets live in
 `~/Library/Application Support/OpenFan/presets.json` (version 2 stores only those; an older file is
 migrated on load).
 
-**Menu Bar Text…** in the panel footer opens the settings page. The text is a template; click a name
+**Menu Bar Text…** in the popover footer opens the settings page. The text is a template; click a name
 to insert it, and the preview shows what the menu bar will say. The names are `{max}` (hottest of CPU
 and GPU), `{cpu}`, `{gpu}`, `{bat}` (battery average), `{rpm}` (fastest fan), `{rpm0}`, `{rpm1}` and
 `{preset}`. Anything that is not a name is shown as typed, and at most 40 characters are shown. Leave
@@ -74,12 +73,12 @@ explains how to add yours.
 
 ## Xcode canvas and preview host
 
-The panel's content is previewable in Xcode's canvas. Open the package (**File ▸ Open…** on `Package.swift`), open
+The popover is previewable in Xcode's canvas. Open the package (**File ▸ Open…** on `Package.swift`), open
 `Sources/OpenFanUI/Previews.swift` and switch the canvas on with **Editor ▸ Canvas** (a **Resume** button appears
-if the canvas is paused). Three variants are declared: the content, plus light and dark appearances.
+if the canvas is paused). Three variants are declared: the popover, plus light and dark appearances.
 
 Previews need the UI in a library target: Xcode refuses to preview an executable target unless the project sets
-`ENABLE_DEBUG_DYLIB`, which a Swift package cannot express, so the UI lives in `OpenFanUI` and the `OpenFan`
+`ENABLE_DEBUG_DYLIB`, which a Swift package cannot express, so the popover lives in `OpenFanUI` and the `OpenFan`
 executable is only the menu bar item and the helper client.
 
 For a plain window rather than the canvas, run the **OpenFanPreview** scheme (⌘R): it hosts the same controller
@@ -99,9 +98,9 @@ before building.
 | `Sources/OpenFanCore` | fan curve, preset store, socket protocol |
 | `Sources/OpenFanControl` | the decision engine (hysteresis, dead band, panic) |
 | `Sources/OpenFanHelper` | the root daemon: socket, lease watchdog, control tick, sleep handling |
-| `Sources/OpenFanUI` | the panel, its views and the preview harness |
+| `Sources/OpenFanUI` | the popover and its views, plus the preview harness |
 | `Sources/OpenFan` | the menu bar app: status item, telemetry, helper client |
-| `Sources/OpenFanPreview` | a window that hosts the panel's content with sample data |
+| `Sources/OpenFanPreview` | a window that hosts the popover with sample data |
 | `Sources/OpenFanProbe` | a read-only report of a Mac's SMC: model, fans, sensors |
 | `Sources/*Check` | executable checks (XCTest is unavailable with Command Line Tools only) |
 | `docs/SPEC.md` | the researched implementation spec |
