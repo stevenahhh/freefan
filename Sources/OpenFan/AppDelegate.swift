@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover?
     private var popoverController: PopoverViewController?
+    private var outsideClickMonitor: Any?
     private var timer: DispatchSourceTimer?
 
     private var latestReading: SensorReading?
@@ -211,11 +212,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         refreshNow()
         controller.update(snapshot())
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        // The app you were in stays in front; without a key popover window Escape and outside clicks went to that app.
         NSApp.activate()
+        controller.view.window?.makeKey()
+        watchOutsideClicks()
         updateTimer()
     }
 
+    /// A transient popover misses clicks on the empty menu bar while this app is inactive, so a global monitor closes it
+    /// too. It exists only while the popover is open; a click on the status item is left to its button.
+    private func watchOutsideClicks() {
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            guard let self, let button = self.statusItem.button, let window = button.window else { return }
+            let item = window.convertToScreen(button.convert(button.bounds, to: nil))
+            guard !item.insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation) else { return }
+            self.popover?.performClose(nil)
+        }
+    }
+
     func popoverDidClose(_ notification: Notification) {
+        if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
+        outsideClickMonitor = nil
         popover?.contentViewController = nil
         popover = nil
         popoverController = nil
