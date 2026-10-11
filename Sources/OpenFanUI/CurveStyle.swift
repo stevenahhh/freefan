@@ -24,9 +24,15 @@ enum CurveStyle {
     static let extensionAlpha: CGFloat = 0.55
     /// The plot's own fill: a translucent black, so it reads as a darker well in the glass in both appearances. A fill
     /// as light as the glass, such as the system fills (about 12 % gray), is indistinguishable from it in light mode.
-    static let plotBackground = NSColor(name: nil) { appearance in
-        let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        return NSColor.black.withAlphaComponent(dark ? 0.28 : 0.18)
+    static let plotBackground = dynamic(light: NSColor.black.withAlphaComponent(0.18), dark: NSColor.black.withAlphaComponent(0.28))
+    /// Grid lines are hairlines, translucent black in light mode (the glass and so the well are bright there, and a white
+    /// line barely shows on them) and translucent white in dark mode, so they read as fine etchings in the well and stay
+    /// behind the curve. Every fifth line (50 and 100) is a little stronger.
+    static let gridMinor = dynamic(light: NSColor.black.withAlphaComponent(0.10), dark: NSColor.white.withAlphaComponent(0.08))
+    static let gridMajor = dynamic(light: NSColor.black.withAlphaComponent(0.20), dark: NSColor.white.withAlphaComponent(0.15))
+
+    private static func dynamic(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light }
     }
     static let titleFont = NSFont.systemFont(ofSize: 11, weight: .medium)
     static let pillFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
