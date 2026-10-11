@@ -1,6 +1,6 @@
 import AppKit
 
-/// Layout, size and opacity constants for the graph. Colors come from NSColor semantic system colors only, so the
+/// Layout, size and opacity constants for the graph. Colors are system colors plus the plot's own dynamic fill, so the
 /// graph follows light/dark appearance and the user's accent color.
 enum CurveStyle {
     static let leftMargin: CGFloat = 26
@@ -22,9 +22,12 @@ enum CurveStyle {
     static let pillOffset: CGFloat = 10
     static let fillAlpha: CGFloat = 0.12
     static let extensionAlpha: CGFloat = 0.55
-    /// The plot's own fill: a translucent neutral that lets the popover's glass through. An opaque white or black card
-    /// (the text background color) reads as a hole in the glass.
-    static let plotBackground = NSColor.tertiarySystemFill
+    /// The plot's own fill: a translucent black, so it reads as a darker well in the glass in both appearances. A fill
+    /// as light as the glass, such as the system fills (about 12 % gray), is indistinguishable from it in light mode.
+    static let plotBackground = NSColor(name: nil) { appearance in
+        let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return NSColor.black.withAlphaComponent(dark ? 0.28 : 0.18)
+    }
     static let titleFont = NSFont.systemFont(ofSize: 11, weight: .medium)
     static let pillFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
 }
