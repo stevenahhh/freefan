@@ -1,0 +1,49 @@
+name: Release build
+
+# A pushed tag v<MAJOR>.<MINOR> builds the app, signs the archive with the update key and attaches both to the
+# release of that tag (which must exist or is created as a draft). The app's updater installs only archives whose
+# signature matches the public key it carries.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build, for example v1.4"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Version matches the tag
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)
+          [ "v${version}" = "${TAG}" ] || { echo "Info.plist says ${version}, the tag is ${TAG}"; exit 1; }
+      - name: Checks
+        run: |
+          swift run --scratch-path build/checks CoreCheck
+          swift run --scratch-path build/checks ControlCheck
+      - name: Build OpenFan.app
+        run: ./scripts/build-app.sh
+      - name: Archive and sign
+        env:
+          OPENFAN_UPDATE_SIGNING_KEY: ${{ secrets.OPENFAN_UPDATE_SIGNING_KEY }}
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent build/OpenFan.app build/OpenFan.zip
+          swift scripts/sign-update.swift build/OpenFan.zip > build/OpenFan.zip.sig
+          shasum -a 256 build/OpenFan.zip
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${TAG}" >/dev/null 2>&1 || gh release create "${TAG}" --draft --title "OpenFan ${TAG#v}" --notes "Release notes to follow."
+          gh release upload "${TAG}" build/OpenFan.zip build/OpenFan.zip.sig --clobber
