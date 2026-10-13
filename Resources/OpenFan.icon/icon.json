@@ -1,0 +1,60 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "linear-gradient": [
+          "extended-srgb:0.30196,0.72549,1.00000,1.00000",
+          "extended-srgb:0.05098,0.40000,0.90196,1.00000"
+        ]
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "extended-srgb:0.16078,0.20000,0.27059,1.00000",
+          "extended-srgb:0.06275,0.07843,0.11765,1.00000"
+        ]
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "Fan",
+      "layers": [
+        {
+          "name": "Desk fan",
+          "image-name": "fan.png",
+          "glass": true,
+          "fill-specializations": [
+            {
+              "value": {
+                "solid": "extended-srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "solid": "extended-srgb:0.45098,0.76863,1.00000,1.00000"
+              }
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.4
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

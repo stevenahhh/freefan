@@ -25,6 +25,9 @@ gets **Update Helper…** (one administrator password).
 
 ## Build and run
 
+The app icon is the Icon Composer document `Resources/OpenFan.icon` (open it in Icon Composer to edit it);
+`build-app.sh` compiles it with `actool`.
+
 ```sh
 swift build --scratch-path build/scratch
 bash scripts/build-app.sh          # assembles and ad-hoc signs build/OpenFan.app

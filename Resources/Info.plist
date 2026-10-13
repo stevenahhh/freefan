@@ -6,6 +6,10 @@
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>OpenFan</string>
+    <key>CFBundleIconFile</key>
+    <string>OpenFan</string>
+    <key>CFBundleIconName</key>
+    <string>OpenFan</string>
     <key>CFBundleIdentifier</key>
     <string>com.stevenahhh.openfan</string>
     <key>CFBundleInfoDictionaryVersion</key>
