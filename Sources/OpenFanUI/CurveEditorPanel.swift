@@ -53,6 +53,14 @@ final class CurveEditorPanel: NSView {
         render()
     }
 
+    /// A desktop Mac has no battery sensor: the Battery input is hidden, unless the preset already follows it, which
+    /// then reads no temperature and leaves the fans to macOS.
+    func setBatteryAvailable(_ available: Bool) {
+        guard let item = inputPopup.item(at: FanControlInput.allCases.firstIndex(of: .battery) ?? -1) else { return }
+        let hidden = !available && draft?.input != .battery
+        if item.isHidden != hidden { item.isHidden = hidden }
+    }
+
     func updateLive(temperature: Float?, speed: FanSpeedFormat) {
         graph.setLive(temperature: temperature, speed: speed)
     }

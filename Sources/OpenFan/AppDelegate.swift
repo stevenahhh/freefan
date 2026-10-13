@@ -190,7 +190,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             helperInstalled: installer.isInstalled,
             helperConnected: helper.isConnected,
             helperStatus: helper.lastStatus,
-            helperError: helper.lastError ?? helperMessage
+            helperError: helper.lastError ?? helperMessage,
+            hasBattery: telemetry?.hasBattery ?? true
         )
     }
 

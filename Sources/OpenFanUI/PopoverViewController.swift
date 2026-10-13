@@ -10,6 +10,8 @@ public struct LiveSnapshot {
     public var helperConnected: Bool
     public var helperStatus: HelperStatus?
     public var helperError: String?
+    /// False on a desktop Mac: the battery column and the battery curve input are hidden.
+    public var hasBattery: Bool
 
     public init(
         reading: SensorReading?,
@@ -18,7 +20,8 @@ public struct LiveSnapshot {
         helperInstalled: Bool,
         helperConnected: Bool,
         helperStatus: HelperStatus?,
-        helperError: String?
+        helperError: String?,
+        hasBattery: Bool = true
     ) {
         self.reading = reading
         self.fans = fans
@@ -27,6 +30,7 @@ public struct LiveSnapshot {
         self.helperConnected = helperConnected
         self.helperStatus = helperStatus
         self.helperError = helperError
+        self.hasBattery = hasBattery
     }
 }
 
@@ -173,8 +177,10 @@ public final class PopoverViewController: NSViewController {
         if warningLabel.stringValue != text { warningLabel.stringValue = text }
         warningLabel.isHidden = warning == nil
 
-        let readout = HeaderReadout(reading: snapshot.reading, fans: snapshot.fans)
+        var readout = HeaderReadout(reading: snapshot.reading, fans: snapshot.fans)
+        readout.hasBattery = snapshot.hasBattery
         header.update(readout)
+        editor.setBatteryAvailable(snapshot.hasBattery)
         footer.update(pressure: snapshot.pressure)
 
         if showingSettings {
@@ -274,6 +280,9 @@ public final class PopoverViewController: NSViewController {
     }
 
     private func warning(for snapshot: LiveSnapshot) -> String? {
+        if snapshot.fans.isEmpty && snapshot.reading != nil {
+            return "No fan found on this Mac. OpenFan shows temperatures only."
+        }
         if !snapshot.helperInstalled {
             return "Helper not installed. Fans stay on Auto until you install it from the menu."
         }
