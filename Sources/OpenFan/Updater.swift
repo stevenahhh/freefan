@@ -2,8 +2,8 @@ import AppKit
 import OpenFanCore
 
 /// Checks GitHub for a newer release and installs it. Nothing is shown unless an update exists; a failed check is
-/// silent and tried again at the next opportunity. The check runs at launch and when the popover opens, at most once a
-/// day, so a closed app has no timer for it.
+/// silent and tried again at the next opportunity. The check runs at launch and, at most once a day, when the popover
+/// opens, so a closed popover has no timer for it.
 final class Updater {
     enum State: Equatable {
         case idle
@@ -31,6 +31,12 @@ final class Updater {
 
     private var currentVersion: AppVersion? {
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String).flatMap(AppVersion.init)
+    }
+
+    /// At launch the check always runs, so a found update shows again after a relaunch; opening the popover checks at
+    /// most once a day.
+    func checkAtLaunch() {
+        check()
     }
 
     func checkIfDue() {
