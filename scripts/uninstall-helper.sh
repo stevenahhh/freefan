@@ -29,6 +29,8 @@ if [[ -f "${TOOL_PATH}" ]]; then
     echo "PASS: Helper binary removed"
 fi
 
+rm -f "${TOOL_PATH}.revision"
+
 if [[ -S "${SOCKET_PATH}" ]]; then
     echo "Removing socket..."
     rm "${SOCKET_PATH}"

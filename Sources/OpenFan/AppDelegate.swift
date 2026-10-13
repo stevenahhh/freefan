@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let settingsStore = SettingsStore()
     private let helper = HelperClient()
     private let installer = HelperInstaller()
+    /// Compared once at launch and after each install, not on every refresh.
+    private lazy var helperOutdated = installer.isOutdated
 
     private let smcQueue = DispatchQueue(label: "com.stevenahhh.openfan.smc", qos: .utility)
     private var smc: SMC?
@@ -188,6 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             fans: latestFans,
             pressure: latestPressure,
             helperInstalled: installer.isInstalled,
+            helperOutdated: helperOutdated,
             helperConnected: helper.isConnected,
             helperStatus: helper.lastStatus,
             helperError: helper.lastError ?? helperMessage,
@@ -277,6 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func finishHelperAction(status: Int32, message: String) {
+        helperOutdated = installer.isOutdated
         if status == 0 {
             helperMessage = nil
             helper.reconnect()

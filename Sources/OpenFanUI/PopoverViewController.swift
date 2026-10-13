@@ -7,6 +7,8 @@ public struct LiveSnapshot {
     public var fans: [FanInfo]
     public var pressure: MemoryPressure?
     public var helperInstalled: Bool
+    /// The installed helper differs from the one this app carries.
+    public var helperOutdated: Bool
     public var helperConnected: Bool
     public var helperStatus: HelperStatus?
     public var helperError: String?
@@ -18,6 +20,7 @@ public struct LiveSnapshot {
         fans: [FanInfo],
         pressure: MemoryPressure?,
         helperInstalled: Bool,
+        helperOutdated: Bool = false,
         helperConnected: Bool,
         helperStatus: HelperStatus?,
         helperError: String?,
@@ -27,6 +30,7 @@ public struct LiveSnapshot {
         self.fans = fans
         self.pressure = pressure
         self.helperInstalled = helperInstalled
+        self.helperOutdated = helperOutdated
         self.helperConnected = helperConnected
         self.helperStatus = helperStatus
         self.helperError = helperError
@@ -251,10 +255,18 @@ public final class PopoverViewController: NSViewController {
             keyEquivalent: ""
         )
         helper.target = self
+        if snapshot?.helperOutdated == true {
+            let refresh = menu.addItem(withTitle: "Update Helper\u{2026}", action: #selector(updateHelperTapped(_:)), keyEquivalent: "")
+            refresh.target = self
+        }
         menu.addItem(.separator())
         let quit = menu.addItem(withTitle: "Quit OpenFan", action: #selector(quitTapped(_:)), keyEquivalent: "q")
         quit.target = self
         return menu
+    }
+
+    @objc private func updateHelperTapped(_ sender: Any?) {
+        actions.installHelper()
     }
 
     @objc private func helperTapped(_ sender: Any?) {
@@ -285,6 +297,9 @@ public final class PopoverViewController: NSViewController {
         }
         if !snapshot.helperInstalled {
             return "Helper not installed. Fans stay on Auto until you install it from the menu."
+        }
+        if snapshot.helperOutdated {
+            return "This version has a new helper. Choose Update Helper\u{2026} from the menu."
         }
         if !snapshot.helperConnected {
             return "Helper not responding. Reconnecting\u{2026}"

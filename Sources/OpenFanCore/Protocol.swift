@@ -24,6 +24,7 @@ public enum HelperPaths {
     public static let label = "com.stevenahhh.openfan.helper"
     public static let socketPath = "/var/run/com.stevenahhh.openfan.sock"
     public static let toolPath = "/Library/PrivilegedHelperTools/com.stevenahhh.openfan.helper"
+    public static let revisionPath = "/Library/PrivilegedHelperTools/com.stevenahhh.openfan.helper.revision"
     public static let daemonPlistPath = "/Library/LaunchDaemons/com.stevenahhh.openfan.helper.plist"
     public static let logPath = "/var/log/com.stevenahhh.openfan.helper.log"
     public static let maxLineBytes = 512
