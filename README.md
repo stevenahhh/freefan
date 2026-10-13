@@ -3,7 +3,7 @@
 Minimal macOS menu-bar fan control for Apple Silicon.
 
 - Live temperatures and fan speeds in the menu bar, in a format you write yourself
-- A popover with CPU, GPU and battery temperatures and one column per fan, as a percentage of full speed or in rpm (click the fan row to switch)
+- A popover with CPU, GPU and (on a laptop) battery temperatures and one column per fan, as a percentage of full speed or in rpm (click the fan row to switch)
 - Temperature-to-speed curves edited on a graph
 - Saved presets in a horizontally scrolling row, one click away
 - Built-in presets that cannot be changed by accident, and your own on top
@@ -66,8 +66,10 @@ Then delete `FreeFan.app`.
 
 ## Supported Macs
 
-OpenFan is verified on one model so far, the MacBook Pro Mac17,9 (Apple M5 Pro). The helper writes to the SMC on
-your behalf, so on any other Mac start with `swift run --scratch-path build/scratch OpenFanProbe`: it only reads,
+OpenFan is verified on one model so far, the MacBook Pro Mac17,9 (Apple M5 Pro). It is written to also handle one-fan
+MacBook Pros, Mac mini, Mac Studio and iMac (no battery column there), M1 to M4 chips (their own temperature keys and
+fan mode key; M3 and M4 need the `Ftst` unlock) and fanless MacBook Airs (temperatures only), but none of these has
+been tested. The helper writes to the SMC on your behalf, so on any other Mac start with `swift run --scratch-path build/scratch OpenFanProbe`: it only reads,
 and prints your model, fans and sensors. [docs/hardware](docs/hardware/README.md) lists the verified models and
 explains how to add yours.
 
