@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let settingsStore = SettingsStore()
     private let helper = HelperClient()
     private let installer = HelperInstaller()
+    private let updater = Updater()
     /// Compared once at launch and after each install, not on every refresh.
     private lazy var helperOutdated = installer.isOutdated
 
@@ -62,6 +63,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         refreshStatusItem()
         startTimer()
+
+        updater.onChange = { [weak self] in
+            guard let self else { return }
+            self.popoverController?.update(self.snapshot())
+        }
+        updater.checkIfDue()
 
         smcQueue.async { [weak self] in
             guard let self else { return }
@@ -194,7 +201,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             helperConnected: helper.isConnected,
             helperStatus: helper.lastStatus,
             helperError: helper.lastError ?? helperMessage,
-            hasBattery: telemetry?.hasBattery ?? true
+            hasBattery: telemetry?.hasBattery ?? true,
+            update: updateOffer
         )
     }
 
@@ -221,6 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         controller.view.window?.makeKey()
         watchOutsideClicks()
         updateTimer()
+        updater.checkIfDue()
     }
 
     /// A transient popover misses clicks on the empty menu bar while this app is inactive, so a global monitor closes it
@@ -244,7 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func popoverActions() -> PopoverActions {
-        PopoverActions(
+        var actions = PopoverActions(
             presetsChanged: { [weak self] in
                 self?.applyActivePreset()
                 self?.refreshStatusItem()
@@ -258,6 +267,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             uninstallHelper: { [weak self] in self?.runHelperAction(install: false) },
             quit: { [weak self] in self?.quit() }
         )
+        actions.installUpdate = { [weak self] in self?.updater.install() }
+        return actions
+    }
+
+    private var updateOffer: UpdateOffer? {
+        switch updater.state {
+        case .idle: return nil
+        case let .available(update): return .available(version: update.version.description)
+        case let .installing(version): return .installing(version: version.description)
+        case let .failed(update, reason): return .failed(version: update.version.description, reason: reason)
+        }
     }
 
     private func applyActivePreset() {
