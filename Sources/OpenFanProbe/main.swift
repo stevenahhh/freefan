@@ -38,20 +38,23 @@ Read-only: nothing here writes to the SMC. Paste it into your pull request as it
 | Chip | \(sysctlString("machdep.cpu.brand_string")) |
 | macOS | \(ProcessInfo.processInfo.operatingSystemVersionString) |
 | SMC keys listed | \((try? smc.keyCount()).map(String.init) ?? "n/a") |
+| Chip generation | \(ChipGeneration.current.number.map { "M\($0)" } ?? "unknown: every catalogued key is tried") |
+| Force-test key `Ftst` | \(telemetry.hasForceTest ? "present (M3/M4 style: manual mode is unlocked through it)" : "absent (manual mode is written directly)") |
+| Battery sensors | \(telemetry.hasBattery ? "present" : "none (a desktop Mac)") |
 
 ## Fans
 
-| fan | min rpm | max rpm | now rpm | mode (0 = system) |
-|---|---|---|---|---|
+| fan | min rpm | max rpm | now rpm | mode key | mode (0 = system) |
+|---|---|---|---|---|---|
 """)
 
 let reading = telemetry.read(.all)
 if telemetry.fans.isEmpty {
-    print("| none found | | | | |")
+    print("| none found | | | | | |")
 }
 for fan in telemetry.fans {
     let now = reading.fans.first { $0.index == fan.index }
-    print("| F\(fan.index) | \(Int(fan.minRPM)) | \(Int(fan.maxRPM)) | \(number(now?.rpm, digits: 0)) | \(now.map { $0.manual ? "1" : "0" } ?? "n/a") |")
+    print("| F\(fan.index) | \(Int(fan.minRPM)) | \(Int(fan.maxRPM)) | \(number(now?.rpm, digits: 0)) | `\(fan.modeKey)` | \(now.map { $0.manual ? "1" : "0" } ?? "n/a") |")
 }
 
 let groups: [(String, [String])] = [

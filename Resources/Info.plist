@@ -15,9 +15,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.3</string>
+    <string>1.4</string>
     <key>CFBundleVersion</key>
-    <string>4</string>
+    <string>5</string>
     <!-- libmalloc tuning: one magazine and compact allocation cut the memory a popover leaves behind by about half. -->
     <key>LSEnvironment</key>
     <dict>
@@ -26,6 +26,9 @@
         <key>MallocSpaceEfficient</key>
         <string>1</string>
     </dict>
+    <!-- Raise with every change to OpenFanHelper: the app then offers Update Helper. -->
+    <key>OpenFanHelperRevision</key>
+    <string>2</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>

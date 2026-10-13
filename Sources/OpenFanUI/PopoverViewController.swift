@@ -7,26 +7,38 @@ public struct LiveSnapshot {
     public var fans: [FanInfo]
     public var pressure: MemoryPressure?
     public var helperInstalled: Bool
+    /// The installed helper differs from the one this app carries.
+    public var helperOutdated: Bool
     public var helperConnected: Bool
     public var helperStatus: HelperStatus?
     public var helperError: String?
+    /// False on a desktop Mac: the battery column and the battery curve input are hidden.
+    public var hasBattery: Bool
+    /// What the footer offers about a newer release; nil shows nothing.
+    public var update: UpdateOffer?
 
     public init(
         reading: SensorReading?,
         fans: [FanInfo],
         pressure: MemoryPressure?,
         helperInstalled: Bool,
+        helperOutdated: Bool = false,
         helperConnected: Bool,
         helperStatus: HelperStatus?,
-        helperError: String?
+        helperError: String?,
+        hasBattery: Bool = true,
+        update: UpdateOffer? = nil
     ) {
         self.reading = reading
         self.fans = fans
         self.pressure = pressure
         self.helperInstalled = helperInstalled
+        self.helperOutdated = helperOutdated
         self.helperConnected = helperConnected
         self.helperStatus = helperStatus
         self.helperError = helperError
+        self.hasBattery = hasBattery
+        self.update = update
     }
 }
 
@@ -36,6 +48,7 @@ public struct PopoverActions {
     public var installHelper: () -> Void
     public var uninstallHelper: () -> Void
     public var quit: () -> Void
+    public var installUpdate: () -> Void = {}
 
     public init(
         presetsChanged: @escaping () -> Void,
@@ -108,6 +121,7 @@ public final class PopoverViewController: NSViewController {
         settingsPanel.onChange = { [weak self] in self?.actions.settingsChanged() }
         settingsPanel.isHidden = true
         footer.menuProvider = { [weak self] in self?.buildMenu() ?? NSMenu() }
+        footer.onUpdate = { [weak self] in self?.actions.installUpdate() }
         footer.onHelpChange = { [weak self] shown in
             if shown {
                 self?.showHelpBubble()
@@ -173,9 +187,12 @@ public final class PopoverViewController: NSViewController {
         if warningLabel.stringValue != text { warningLabel.stringValue = text }
         warningLabel.isHidden = warning == nil
 
-        let readout = HeaderReadout(reading: snapshot.reading, fans: snapshot.fans)
+        var readout = HeaderReadout(reading: snapshot.reading, fans: snapshot.fans)
+        readout.hasBattery = snapshot.hasBattery
         header.update(readout)
+        editor.setBatteryAvailable(snapshot.hasBattery)
         footer.update(pressure: snapshot.pressure)
+        footer.update(offer: snapshot.update)
 
         if showingSettings {
             settingsPanel.update(values: MenuBarValues(reading: snapshot.reading, presetName: store.library.activePreset?.name ?? "Auto"))
@@ -245,10 +262,18 @@ public final class PopoverViewController: NSViewController {
             keyEquivalent: ""
         )
         helper.target = self
+        if snapshot?.helperOutdated == true {
+            let refresh = menu.addItem(withTitle: "Update Helper\u{2026}", action: #selector(updateHelperTapped(_:)), keyEquivalent: "")
+            refresh.target = self
+        }
         menu.addItem(.separator())
         let quit = menu.addItem(withTitle: "Quit OpenFan", action: #selector(quitTapped(_:)), keyEquivalent: "q")
         quit.target = self
         return menu
+    }
+
+    @objc private func updateHelperTapped(_ sender: Any?) {
+        actions.installHelper()
     }
 
     @objc private func helperTapped(_ sender: Any?) {
@@ -274,8 +299,14 @@ public final class PopoverViewController: NSViewController {
     }
 
     private func warning(for snapshot: LiveSnapshot) -> String? {
+        if snapshot.fans.isEmpty && snapshot.reading != nil {
+            return "No fan found on this Mac. OpenFan shows temperatures only."
+        }
         if !snapshot.helperInstalled {
             return "Helper not installed. Fans stay on Auto until you install it from the menu."
+        }
+        if snapshot.helperOutdated {
+            return "This version has a new helper. Choose Update Helper\u{2026} from the menu."
         }
         if !snapshot.helperConnected {
             return "Helper not responding. Reconnecting\u{2026}"

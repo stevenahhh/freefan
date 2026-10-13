@@ -30,27 +30,26 @@ do {
 
 // MARK: - 1. Key discovery and the absent-key path
 
-for key in SensorCatalog.cpuKeys {
-    let first = smc.keyExists(key)
-    let second = smc.keyExists(key)
-    report(first && second, "CPU key \(key) resolves (exists=\(first), again=\(second))")
+// A smaller chip of a generation lacks some of its keys, so each group needs at least one, and every answer is stable.
+for (group, keys) in [("CPU", SensorCatalog.cpuKeys), ("GPU", SensorCatalog.gpuKeys)] {
+    var present = 0
+    var stable = true
+    for key in keys {
+        let first = smc.keyExists(key)
+        if first != smc.keyExists(key) { stable = false }
+        if first { present += 1 }
+    }
+    report(present > 0 && stable, "\(group) keys: \(present) of \(keys.count) present, answers stable=\(stable)")
 }
 
-for key in SensorCatalog.gpuKeys {
-    let first = smc.keyExists(key)
-    let second = smc.keyExists(key)
-    report(first && second, "GPU key \(key) resolves (exists=\(first), again=\(second))")
-}
-
-// Tg1g is absent on this machine (Mac17,9); the catalog still lists it so discovery can prove it.
-let tg1g = smc.keyExists("Tg1g")
-let tg1gAgain = smc.keyExists("Tg1g")
-report(!tg1g && !tg1gAgain, "absent GPU key Tg1g resolves false (exists=\(tg1g), again=\(tg1gAgain))")
+let absent = smc.keyExists("Tzz9")
+let absentAgain = smc.keyExists("Tzz9")
+report(!absent && !absentAgain, "a key no Mac has resolves false twice (exists=\(absent), again=\(absentAgain))")
 
 // MARK: - 2. Fan count and per-fan limits
 
 let fanCount = (try? smc.readUInt8("FNum")).map(Int.init)
-report(fanCount == 2, "FNum reads 2 (got \(fanCount.map(String.init) ?? "read failed"))")
+report(fanCount != nil, "FNum reads (got \(fanCount.map(String.init) ?? "read failed"); 0 on a Mac without fans)")
 
 var fans: [FanInfo] = []
 for index in 0..<(fanCount ?? 0) {
@@ -58,6 +57,8 @@ for index in 0..<(fanCount ?? 0) {
     let maxRPM = try? smc.readFloat("F\(index)Mx")
     let ok = (minRPM ?? 0) > 0 && (maxRPM ?? 0) > (minRPM ?? 0)
     report(ok, "fan \(index) has Mn > 0 and Mn < Mx (Mn=\(describe(minRPM)), Mx=\(describe(maxRPM)))")
+    let modeKeys = ["F\(index)md", "F\(index)Md"].filter { smc.keyExists($0) }
+    report(modeKeys.count == 1, "fan \(index) has exactly one mode key (found \(modeKeys))")
     if ok, let minRPM, let maxRPM {
         fans.append(FanInfo(index: index, minRPM: minRPM, maxRPM: maxRPM))
     }
@@ -65,15 +66,20 @@ for index in 0..<(fanCount ?? 0) {
 
 // MARK: - 3. Fan 0 actual RPM
 
-let fan0Max = try? smc.readFloat("F0Mx")
-let fan0Actual = try? smc.readFloat("F0Ac")
-let actualOK: Bool
-if let fan0Actual, let fan0Max {
-    actualOK = fan0Actual.isFinite && fan0Actual >= 0 && fan0Actual <= fan0Max + 500
+let hasFans = (fanCount ?? 0) > 0
+if hasFans {
+    let fan0Max = try? smc.readFloat("F0Mx")
+    let fan0Actual = try? smc.readFloat("F0Ac")
+    let actualOK: Bool
+    if let fan0Actual, let fan0Max {
+        actualOK = fan0Actual.isFinite && fan0Actual >= 0 && fan0Actual <= fan0Max + 500
+    } else {
+        actualOK = false
+    }
+    report(actualOK, "F0Ac finite within 0...F0Mx+500 (Ac=\(describe(fan0Actual)), Mx=\(describe(fan0Max)))")
 } else {
-    actualOK = false
+    print("[SMCCheck] SKIP no fans: F0Ac and the write refusal are not checked")
 }
-report(actualOK, "F0Ac finite within 0...F0Mx+500 (Ac=\(describe(fan0Actual)), Mx=\(describe(fan0Max)))")
 
 // MARK: - 4. Telemetry discovery and a live reading
 
@@ -93,12 +99,16 @@ if let telemetry {
     report(gpuOK, "Telemetry.read GPU in 0...130 (gpu=\(describe(reading.gpu)))")
 }
 
-// MARK: - 4b. Battery sensors
+// MARK: - 4b. Battery sensors (a desktop has none)
 
 let batteryDirect = SensorCatalog.batteryKeys.compactMap { try? smc.readFloat($0) }
-report(batteryDirect.count == SensorCatalog.batteryKeys.count,
-       "every battery key \(SensorCatalog.batteryKeys) reads (\(batteryDirect.count) of \(SensorCatalog.batteryKeys.count))")
-if let telemetry {
+let presentBattery = SensorCatalog.batteryKeys.filter { smc.keyExists($0) }
+report(batteryDirect.count == presentBattery.count,
+       "every battery key present reads (\(batteryDirect.count) of \(presentBattery.count) present)")
+if presentBattery.isEmpty {
+    print("[SMCCheck] SKIP no battery sensors (a desktop Mac)")
+    report(telemetry?.hasBattery == false, "Telemetry reports no battery")
+} else if let telemetry {
     let reading = telemetry.read()
     let expected = SensorCatalog.batteryMean(batteryDirect)
     var matches = false
@@ -113,7 +123,9 @@ report(SensorCatalog.batteryMean([0, .nan, .infinity]) == nil, "battery mean of 
 
 // MARK: - 5. Unprivileged write is refused
 
-if geteuid() != 0 {
+if !hasFans {
+    print("[SMCCheck] SKIP no fans to write to")
+} else if geteuid() != 0 {
     var notPrivileged = false
     do {
         try smc.writeFloat("F0Tg", 4000)

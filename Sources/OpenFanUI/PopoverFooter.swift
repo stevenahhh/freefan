@@ -42,14 +42,23 @@ private final class HoverButton: NSButton {
     }
 }
 
+/// The footer's update label. `available` and `failed` are clickable and start the update.
+public enum UpdateOffer: Equatable {
+    case available(version: String)
+    case installing(version: String)
+    case failed(version: String, reason: String)
+}
+
 final class PopoverFooter: NSView {
     var menuProvider: (() -> NSMenu)?
+    var onUpdate: (() -> Void)?
     var onHelpChange: ((Bool) -> Void)?
 
     private let helpButton = HoverButton(symbol: "questionmark.circle", description: "Help")
     private let pressureDot = NSImageView()
     private let pressureLabel = NSTextField(labelWithString: "")
     private let menuButton = HoverButton(symbol: "line.3.horizontal", description: "More")
+    private let updateButton = NSButton(title: "", target: nil, action: nil)
     private var helpShown = false
 
     var helpAnchor: NSRect? {
@@ -76,7 +85,15 @@ final class PopoverFooter: NSView {
         let spacer = NSView()
         spacer.setContentHuggingPriority(NSLayoutConstraint.Priority(rawValue: 1), for: .horizontal)
 
-        let row = NSStackView(views: [helpButton, pressureDot, pressureLabel, spacer, menuButton])
+        updateButton.isBordered = false
+        updateButton.bezelStyle = .regularSquare
+        updateButton.font = .systemFont(ofSize: 11, weight: .semibold)
+        updateButton.contentTintColor = .controlAccentColor
+        updateButton.target = self
+        updateButton.action = #selector(updateTapped(_:))
+        updateButton.isHidden = true
+
+        let row = NSStackView(views: [helpButton, pressureDot, pressureLabel, spacer, updateButton, menuButton])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 6
@@ -108,6 +125,32 @@ final class PopoverFooter: NSView {
         guard let pressure else { return }
         pressureDot.image = pressure.dotImage(size: 8)
         pressureLabel.stringValue = "Memory \(pressure.label)"
+    }
+
+    func update(offer: UpdateOffer?) {
+        updateButton.isHidden = offer == nil
+        guard let offer else { return }
+        let title: String
+        let tip: String
+        switch offer {
+        case let .available(version):
+            title = "Update available!"
+            tip = "Install OpenFan \(version) and relaunch"
+        case let .installing(version):
+            title = "Updating…"
+            tip = "Downloading and checking OpenFan \(version)"
+        case let .failed(version, reason):
+            title = "Update failed, retry"
+            tip = "OpenFan \(version): \(reason)"
+        }
+        if updateButton.title != title { updateButton.title = title }
+        updateButton.toolTip = tip
+        updateButton.setAccessibilityLabel(tip)
+        if case .installing = offer { updateButton.isEnabled = false } else { updateButton.isEnabled = true }
+    }
+
+    @objc private func updateTapped(_ sender: Any?) {
+        onUpdate?()
     }
 
     func dismissHelp() {

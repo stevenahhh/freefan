@@ -50,7 +50,17 @@ Versions are `MAJOR.MINOR` and nothing else: 1.0, 1.1, 1.2, and 2.0 for a change
 `Resources/Info.plist` is the only place the version lives. A release changes two keys there in its own commit:
 `CFBundleShortVersionString` to the new version (it is what the footer menu shows) and `CFBundleVersion` to the
 previous value plus one. The release is then the tag `v<version>` on that commit (`v1.1`) and a GitHub release
-named `OpenFan <version>`; the app is source-only, so no binary is attached.
+named `OpenFan <version>` with detailed notes.
+
+Pushing the tag runs `.github/workflows/release.yml`: it checks that the tag matches `Info.plist`, runs the checks,
+builds the app, zips it as `OpenFan.zip`, signs the zip with the Ed25519 key in the repository secret
+`OPENFAN_UPDATE_SIGNING_KEY` (`scripts/sign-update.swift`) and attaches `OpenFan.zip` and `OpenFan.zip.sig` to the
+release. The app's updater installs only an archive whose signature matches `UpdateSignature.publicKey`, so the key
+must never change without a release that ships the new public key first.
+
+A change to the helper (`Sources/OpenFanHelper`, `OpenFanSMC`, `OpenFanControl` or the helper scripts) also raises
+`OpenFanHelperRevision` in `Info.plist` by one. The installer records it, and an app whose number is higher than the
+installed one offers **Update Helper…**.
 
 ## Reporting a problem
 

@@ -17,6 +17,7 @@ struct HeaderReadout: Equatable {
     var cpu: Float?
     var gpu: Float?
     var battery: Float?
+    var hasBattery = true
     var fanRows: [[Fan]] = []
 
     private static let maxFansPerRow = 3
@@ -121,7 +122,8 @@ final class TelemetryHeaderView: NSView {
 
     private(set) var showsRPM = false
 
-    private let temperatureRow = HeaderRow(columnCount: 3)
+    private var temperatureRow = HeaderRow(columnCount: 3)
+    private var temperatureColumns = 3
     private var fanRows: [HeaderRow] = []
     private let stack = NSStackView()
 
@@ -137,14 +139,19 @@ final class TelemetryHeaderView: NSView {
     }
 
     func update(_ readout: HeaderReadout) {
+        let columns = readout.hasBattery ? 3 : 2
+        if columns != temperatureColumns {
+            temperatureColumns = columns
+            temperatureRow = HeaderRow(columnCount: columns)
+            for row in fanRows { row.widthAnchor.constraint(equalTo: temperatureRow.widthAnchor).isActive = true }
+            stack.setViews(fanRows + [temperatureRow], in: .top)
+        }
         while fanRows.count < readout.fanRows.count {
             makeFanRow(columnCount: readout.fanRows[fanRows.count].count)
         }
-        temperatureRow.set([
-            (Self.degrees(readout.cpu), "CPU"),
-            (Self.degrees(readout.gpu), "GPU"),
-            (Self.degrees(readout.battery), "BATTERY"),
-        ])
+        var temperatures = [(Self.degrees(readout.cpu), "CPU"), (Self.degrees(readout.gpu), "GPU")]
+        if readout.hasBattery { temperatures.append((Self.degrees(readout.battery), "BATTERY")) }
+        temperatureRow.set(temperatures)
         for (index, row) in readout.fanRows.enumerated() where index < fanRows.count {
             fanRows[index].set(row.map(fanCell))
         }

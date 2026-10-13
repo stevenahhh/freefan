@@ -69,6 +69,9 @@ final class HelperDaemon {
     private var engaged = false
     /// Fans whose F{n}Tg was written at least once. md=1 on any other fan would stop it (target 0).
     private var targetWritten: Set<Int> = []
+    /// True while this helper holds `Ftst` = 1. Every release clears it: left set, macOS's thermal management stays off.
+    private var forceTestSet = false
+    private var manualFans: Set<Int> = []
     private var lastTemperature: Double?
     private var lastTargets: [Int: Float] = [:]
     private var loggedMode: HelperMode = .auto
@@ -99,12 +102,20 @@ final class HelperDaemon {
             let table = fans.map { "F\($0.index) \(Int($0.minRPM))...\(Int($0.maxRPM)) rpm" }.joined(separator: ", ")
             logLine("fans: \(table)")
         }
-        bootReset(smc: smc, fans: fans)
+        bootReset(smc: smc, fans: fans, forceTest: telemetry.hasForceTest)
         return HelperDaemon(options: options, smc: smc, telemetry: telemetry)
     }
 
     /// A crashed previous instance must never leave the fans under manual control.
-    private static func bootReset(smc: SMC, fans: [FanInfo]) {
+    private static func bootReset(smc: SMC, fans: [FanInfo], forceTest: Bool) {
+        if forceTest, let value = try? smc.readUInt8(Self.forceTestKey), value != 0 {
+            do {
+                try smc.writeUInt8(Self.forceTestKey, 0)
+                logLine("boot reset: Ftst was \(value), wrote 0")
+            } catch {
+                logLine("boot reset: cannot write Ftst: \(error)")
+            }
+        }
         var reset = 0
         for fan in fans {
             let mode = try? smc.readUInt8(fan.modeKey)
@@ -278,12 +289,50 @@ final class HelperDaemon {
             if on {
                 guard targetWritten.contains(fan) else { throw WriteGuardError.manualBeforeTarget(fan: fan) }
                 engaged = true
-                try smc.writeUInt8(info.modeKey, 1)
+                try enterManual(info)
+                manualFans.insert(fan)
             } else {
                 try smc.writeUInt8(info.modeKey, 0)
                 lastTargets[fan] = 0
+                manualFans.remove(fan)
+                // A curve's zero-fan zone hands every fan back; macOS only manages them again once Ftst is 0.
+                if manualFans.isEmpty && forceTestSet {
+                    try smc.writeUInt8(Self.forceTestKey, 0)
+                    forceTestSet = false
+                }
             }
         }
+    }
+
+    static let forceTestKey = "Ftst"
+
+    /// M5 and M1 accept `md` = 1 directly. M3 and M4 refuse it while macOS holds the fans; there `Ftst` = 1 unlocks
+    /// manual mode after about half a second (agoodkind/macos-smc-fan, garyhooi/AutoFansMac). A Mac without `Ftst`
+    /// that refuses the write fails as before.
+    private func enterManual(_ info: FanInfo) throws {
+        do {
+            try smc.writeUInt8(info.modeKey, 1)
+            return
+        } catch {
+            guard telemetry.hasForceTest else { throw error }
+        }
+        if !forceTestSet {
+            try smc.writeUInt8(Self.forceTestKey, 1)
+            forceTestSet = true
+            logLine("\(info.modeKey) refused manual mode; Ftst set to 1")
+            usleep(500_000)
+        }
+        var lastError: Error?
+        for _ in 0..<20 {
+            do {
+                try smc.writeUInt8(info.modeKey, 1)
+                return
+            } catch {
+                lastError = error
+                usleep(100_000)
+            }
+        }
+        throw lastError ?? WriteGuardError.unknownFan(info.index)
     }
 
     private func fanInfo(_ index: Int) throws -> FanInfo {
@@ -308,6 +357,16 @@ final class HelperDaemon {
             } catch {
                 failed += 1
                 logLine("release: cannot write \(fan.modeKey): \(error)")
+            }
+        }
+        if failed == 0 { manualFans = [] }
+        if forceTestSet {
+            do {
+                try smc.writeUInt8(Self.forceTestKey, 0)
+                forceTestSet = false
+            } catch {
+                failed += 1
+                logLine("release: cannot write Ftst: \(error)")
             }
         }
         if failed == 0 { engaged = false }

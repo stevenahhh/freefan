@@ -18,6 +18,7 @@ fi
 LABEL="com.stevenahhh.openfan.helper"
 SOCKET_PATH="/var/run/com.stevenahhh.openfan.sock"
 TOOL_PATH="/Library/PrivilegedHelperTools/com.stevenahhh.openfan.helper"
+REVISION_PATH="/Library/PrivilegedHelperTools/com.stevenahhh.openfan.helper.revision"
 PLIST_PATH="/Library/LaunchDaemons/com.stevenahhh.openfan.helper.plist"
 LOG_PATH="/var/log/com.stevenahhh.openfan.helper.log"
 
@@ -56,6 +57,14 @@ cp "${HELPER_SOURCE}" "${TOOL_PATH}"
 chown root:wheel "${TOOL_PATH}"
 chmod 0755 "${TOOL_PATH}"
 echo "PASS: Helper binary installed and set to root:wheel 0755"
+
+# Record which helper revision this is, so the app can tell when an update brought a newer one.
+INFO_PLIST="$(dirname "${BASH_SOURCE[0]}")/../Info.plist"
+REVISION="$(/usr/libexec/PlistBuddy -c 'Print :OpenFanHelperRevision' "${INFO_PLIST}" 2>/dev/null || echo 0)"
+echo "${REVISION}" > "${REVISION_PATH}"
+chown root:wheel "${REVISION_PATH}"
+chmod 0644 "${REVISION_PATH}"
+echo "PASS: Helper revision ${REVISION} recorded"
 
 # Write the launchd plist
 echo "Writing launchd plist to ${PLIST_PATH}..."

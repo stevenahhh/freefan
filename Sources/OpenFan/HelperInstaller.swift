@@ -9,6 +9,19 @@ final class HelperInstaller {
         FileManager.default.fileExists(atPath: HelperPaths.daemonPlistPath)
     }
 
+    /// True when the installed helper is older than the one inside this app, as after an in-app update that changed
+    /// it. `OpenFanHelperRevision` in Info.plist goes up with every helper change and the install script records it
+    /// next to the helper; a helper from before 1.4 recorded nothing. The fans keep working with the old helper until
+    /// it is installed again (one password prompt).
+    var isOutdated: Bool {
+        guard isInstalled,
+              let bundled = (Bundle.main.object(forInfoDictionaryKey: "OpenFanHelperRevision") as? String).flatMap(Int.init)
+        else { return false }
+        let recorded = (try? String(contentsOfFile: HelperPaths.revisionPath, encoding: .utf8))
+            .flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? 0
+        return recorded < bundled
+    }
+
     func install(completion: @escaping (Int32, String) -> Void) {
         run(script: "install-helper.sh", arguments: [String(getuid())], completion: completion)
     }

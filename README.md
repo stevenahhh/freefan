@@ -3,11 +3,25 @@
 Minimal macOS menu-bar fan control for Apple Silicon.
 
 - Live temperatures and fan speeds in the menu bar, in a format you write yourself
-- A popover with CPU, GPU and battery temperatures and one column per fan, as a percentage of full speed or in rpm (click the fan row to switch)
+- A popover with CPU, GPU and (on a laptop) battery temperatures and one column per fan, as a percentage of full speed or in rpm (click the fan row to switch)
 - Temperature-to-speed curves edited on a graph
 - Saved presets in a horizontally scrolling row, one click away
 - Built-in presets that cannot be changed by accident, and your own on top
 - Near-zero CPU and memory overhead
+
+## Download
+
+Each [release](https://github.com/stevenahhh/openfan/releases/latest) from 1.4 on carries `OpenFan.zip`. Unzip it,
+move `OpenFan.app` to `/Applications` and open it. The app is ad-hoc signed and not notarized, so the first launch
+needs a right-click on the app and **Open** (or `xattr -dr com.apple.quarantine /Applications/OpenFan.app`).
+
+## Updates
+
+OpenFan looks for a newer release when it starts and when you open the popover, at most once a day. Nothing appears
+unless there is one: then the footer shows **Update available!**. Clicking it downloads the release, checks its
+Ed25519 signature against the key built into the app and the app's code signature, swaps it in and relaunches. There
+are no notifications and no background timer. When a release changes the helper, the popover says so and the ☰ menu
+gets **Update Helper…** (one administrator password).
 
 ## Build and run
 
@@ -66,8 +80,10 @@ Then delete `FreeFan.app`.
 
 ## Supported Macs
 
-OpenFan is verified on one model so far, the MacBook Pro Mac17,9 (Apple M5 Pro). The helper writes to the SMC on
-your behalf, so on any other Mac start with `swift run --scratch-path build/scratch OpenFanProbe`: it only reads,
+OpenFan is verified on one model so far, the MacBook Pro Mac17,9 (Apple M5 Pro). It is written to also handle one-fan
+MacBook Pros, Mac mini, Mac Studio and iMac (no battery column there), M1 to M4 chips (their own temperature keys and
+fan mode key; M3 and M4 need the `Ftst` unlock) and fanless MacBook Airs (temperatures only), but none of these has
+been tested. The helper writes to the SMC on your behalf, so on any other Mac start with `swift run --scratch-path build/scratch OpenFanProbe`: it only reads,
 and prints your model, fans and sensors. [docs/hardware](docs/hardware/README.md) lists the verified models and
 explains how to add yours.
 
@@ -139,8 +155,7 @@ Pull requests are welcome, above all for support of other Macs. See [CONTRIBUTIN
 There is no warranty, and this software writes to your Mac's SMC through a root helper. Read the safety model above,
 check [docs/hardware](docs/hardware/README.md) to see whether your model has been verified, and use it at your own risk.
 
-OpenFan is source-only. The app is ad-hoc signed and not notarized, so no prebuilt download is published; build it
-yourself as described above.
+The prebuilt app is ad-hoc signed and not notarized; you can always build it yourself as described above.
 
 OpenFan was written from scratch. The AppleSMC protocol and the key names were learned from open-source projects such
 as [Stats](https://github.com/exelban/stats), [SMCKit](https://github.com/beltex/SMCKit),
