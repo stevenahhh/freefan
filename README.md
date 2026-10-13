@@ -1,14 +1,48 @@
+<div align="center">
+
+<img src="docs/images/icon.png" width="128" height="128" alt="OpenFan icon">
+
 # OpenFan
 
-Minimal macOS menu-bar fan control for Apple Silicon.
+**Your Mac's fans, on your terms: a tiny menu-bar app that shows every temperature and lets you draw the curve.**
 
-- Live temperatures and fan speeds in the menu bar, in a format you write yourself
-- A popover with CPU, GPU and (on a laptop) battery temperatures and one column per fan, as a percentage of full
-  speed or in rpm
-- Temperature-to-speed curves edited on a graph, saved as presets one click away
-- Built-in presets that cannot be changed by accident, and your own on top
-- In-app updates, signed and verified, with no notifications
-- Near-zero CPU and memory overhead
+[![Latest release](https://img.shields.io/github/v/release/stevenahhh/openfan?label=release&color=0a84ff)](https://github.com/stevenahhh/openfan/releases/latest)
+[![CI](https://github.com/stevenahhh/openfan/actions/workflows/ci.yml/badge.svg)](https://github.com/stevenahhh/openfan/actions/workflows/ci.yml)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple)
+![Apple silicon](https://img.shields.io/badge/Apple%20silicon-M1%E2%80%93M5-5e5ce6)
+[![MIT](https://img.shields.io/badge/license-MIT-34c759)](LICENSE)
+
+<img src="docs/images/popover-balanced.png" width="390" height="480" alt="The OpenFan popover with the built-in Balanced preset">
+&nbsp;&nbsp;
+<img src="docs/images/popover-custom.png" width="348" height="480" alt="A custom curve under load: both fans at full speed">
+
+<sub>Left: the built-in Balanced preset at idle. Right: your own curve under load, both fans at full speed.</sub>
+
+</div>
+
+## Why OpenFan
+
+- **Laptops and desktops.** MacBook Pro, Mac mini, Mac Studio and iMac: OpenFan finds however many fans your Mac has
+  and controls each one. Desktops simply drop the battery column; fanless MacBook Airs still get every temperature.
+- **Every Apple silicon generation.** M1 to M5, with each chip's own temperature sensors and fan keys, including the
+  extra unlock M3 and M4 need.
+- **Curves you draw.** Drag points on a graph, follow the CPU, the GPU, the hotter of the two or the battery, and save
+  it as a preset that is one click away. Silent, Balanced, Performance and Full are built in.
+- **Quiet when it can be.** Below a curve's bottom edge the fans go back to macOS, so a cool Mac stays silent.
+- **Safe by design.** A small root helper is the only thing that touches the SMC. It writes the target speed before
+  taking manual control, keeps every value inside the fan's limits, and gives the fans back to macOS if the app quits,
+  crashes, goes quiet for 12 seconds or the Mac goes to sleep. At 95 °C the fans go to full speed, whatever the curve
+  says.
+- **Your menu bar, your way.** Write the menu-bar text yourself from `{cpu}`, `{gpu}`, `{rpm}`, `{preset}` and friends,
+  with an Activity-Monitor-style memory pressure dot.
+- **Nearly free to run.** 0.0 to 0.1 % CPU and under 30 MB with the popover closed, and the helper takes about 2.5 MB;
+  it reads the sensors only as often as what is on screen needs.
+- **Updates in one click.** A signed, verified update when there is one, and nothing at all when there is not: no
+  notifications, no background timer.
+- **Native and open.** Swift and AppKit, Liquid Glass on macOS 26, no dependencies, MIT licensed.
+
+> Verified on the MacBook Pro Mac17,9 (M5 Pro). The other Macs above are supported by the code but not yet measured on
+> real hardware; see [Supported Macs](#supported-macs) and help by sending your Mac's evidence.
 
 ## Install
 
