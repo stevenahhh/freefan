@@ -19,3 +19,5 @@ jobs:
         run: swift run --scratch-path build/scratch CoreCheck
       - name: ControlCheck
         run: swift run --scratch-path build/scratch ControlCheck
+      - name: App bundle with its icon
+        run: ./scripts/build-app.sh

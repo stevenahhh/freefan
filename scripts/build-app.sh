@@ -65,6 +65,19 @@ echo "PASS: Install/uninstall scripts copied to Contents/Resources"
 cp "${REPO_DIR}/Resources/Info.plist" "${CONTENTS_DIR}/"
 echo "PASS: Info.plist copied to Contents"
 
+# Compile the Icon Composer document into Assets.car (the Liquid Glass icon) and OpenFan.icns (for older macOS).
+# Info.plist already names it through CFBundleIconName and CFBundleIconFile.
+xcrun actool "${REPO_DIR}/Resources/OpenFan.icon" --compile "${RESOURCES_DIR}" --platform macosx \
+    --minimum-deployment-target 14.0 --app-icon OpenFan \
+    --output-partial-info-plist "${BUILD_DIR}/icon-partial.plist" >/dev/null
+for file in Assets.car OpenFan.icns; do
+    if [ ! -f "${RESOURCES_DIR}/${file}" ]; then
+        echo "FAIL: actool did not produce ${file}" >&2
+        exit 1
+    fi
+done
+echo "PASS: App icon compiled into Contents/Resources"
+
 # Sign the helper binary first (nested binary must be signed before the bundle)
 codesign --force --sign - --identifier com.stevenahhh.openfan.helper "${RESOURCES_DIR}/OpenFanHelper"
 echo "PASS: OpenFanHelper signed with ad-hoc signature"

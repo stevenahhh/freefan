@@ -6,6 +6,10 @@
     <string>en</string>
     <key>CFBundleExecutable</key>
     <string>OpenFan</string>
+    <key>CFBundleIconFile</key>
+    <string>OpenFan</string>
+    <key>CFBundleIconName</key>
+    <string>OpenFan</string>
     <key>CFBundleIdentifier</key>
     <string>com.stevenahhh.openfan</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -15,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.5</string>
+    <string>1.6</string>
     <key>CFBundleVersion</key>
-    <string>6</string>
+    <string>7</string>
     <!-- libmalloc tuning: one magazine and compact allocation cut the memory a popover leaves behind by about half. -->
     <key>LSEnvironment</key>
     <dict>
