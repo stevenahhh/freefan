@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import CheckKit
 import OpenFanCore
@@ -496,6 +497,55 @@ do {
 
     store.setTemplate(String(repeating: "b", count: 500))
     check.expectEqual(store.settings.menuBarTemplate.count, AppSettings.maxTemplateLength, "setTemplate cuts to the limit")
+}
+
+// MARK: - Updates
+
+do {
+    check.expectEqual(AppVersion("1.4")?.description, "1.4", "1.4 parses")
+    check.expectEqual(AppVersion("v1.10")?.description, "1.10", "v1.10 parses")
+    for bad in ["", "1", "1.4.1", "1.x", "-1.4", "1.-4", "v", "1..4", " 1.4", "1.٤"] {
+        check.expect(AppVersion(bad) == nil, "\(bad.debugDescription) is not a version")
+    }
+    if let a = AppVersion("1.9"), let b = AppVersion("1.10"), let c = AppVersion("2.0") {
+        check.expect(a < b && b < c, "1.9 < 1.10 < 2.0")
+    }
+
+    let current = AppVersion(major: 1, minor: 3)
+    func release(tag: String, draft: Bool = false, prerelease: Bool = false, assets: [(String, String)]) -> Data {
+        let list = assets.map { #"{"name":"\#($0.0)","browser_download_url":"\#($0.1)"}"# }.joined(separator: ",")
+        return Data(#"{"tag_name":"\#(tag)","draft":\#(draft),"prerelease":\#(prerelease),"html_url":"https://github.com/stevenahhh/openfan/releases/tag/\#(tag)","assets":[\#(list)]}"#.utf8)
+    }
+    let base = "https://github.com/stevenahhh/openfan/releases/download/v1.4/"
+    let good = [("OpenFan.zip", base + "OpenFan.zip"), ("OpenFan.zip.sig", base + "OpenFan.zip.sig")]
+    let update = AvailableUpdate.parse(release(tag: "v1.4", assets: good), newerThan: current)
+    check.expectEqual(update?.version.description, "1.4", "a newer release with both assets is an update")
+    check.expectEqual(update?.archiveURL.lastPathComponent, "OpenFan.zip", "the archive URL is the zip")
+    check.expect(AvailableUpdate.parse(release(tag: "v1.3", assets: good), newerThan: current) == nil, "the same version is no update")
+    check.expect(AvailableUpdate.parse(release(tag: "v1.2", assets: good), newerThan: current) == nil, "an older version is no update")
+    check.expect(AvailableUpdate.parse(release(tag: "v1.4", draft: true, assets: good), newerThan: current) == nil, "a draft is no update")
+    check.expect(AvailableUpdate.parse(release(tag: "v1.4", prerelease: true, assets: good), newerThan: current) == nil, "a prerelease is no update")
+    check.expect(AvailableUpdate.parse(release(tag: "v1.4", assets: [good[0]]), newerThan: current) == nil, "a release without a signature is no update")
+    check.expect(AvailableUpdate.parse(release(tag: "v1.4.1", assets: good), newerThan: current) == nil, "a tag that is not MAJOR.MINOR is no update")
+    check.expect(AvailableUpdate.parse(release(tag: "v1.4", assets: [("OpenFan.zip", "http://github.com/a.zip"), good[1]]), newerThan: current) == nil, "plain HTTP is refused")
+    check.expect(AvailableUpdate.parse(release(tag: "v1.4", assets: [("OpenFan.zip", "https://example.com/OpenFan.zip"), good[1]]), newerThan: current) == nil, "a host other than GitHub is refused")
+    check.expect(AvailableUpdate.parse(Data("not json".utf8), newerThan: current) == nil, "garbage is no update")
+
+    let key = Curve25519.Signing.PrivateKey()
+    let publicKey = key.publicKey.rawRepresentation.base64EncodedString()
+    let archive = Data("archive bytes".utf8)
+    let signature = Data((try! key.signature(for: archive)).base64EncodedString().utf8 + [10])
+    check.expect(UpdateSignature.isValid(archive: archive, signature: signature, publicKey: publicKey), "a matching signature is valid, trailing newline allowed")
+    check.expect(!UpdateSignature.isValid(archive: Data("archive bytez".utf8), signature: signature, publicKey: publicKey), "a changed archive is refused")
+    check.expect(!UpdateSignature.isValid(archive: archive, signature: signature), "a signature from another key is refused")
+    check.expect(!UpdateSignature.isValid(archive: archive, signature: Data("%%%".utf8), publicKey: publicKey), "a signature that is not base64 is refused")
+    check.expect(Data(base64Encoded: UpdateSignature.publicKey)?.count == 32, "the embedded public key is 32 bytes")
+
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    check.expect(UpdateSchedule.isDue(lastCheck: nil, now: now), "never checked: due")
+    check.expect(!UpdateSchedule.isDue(lastCheck: now.addingTimeInterval(-3600), now: now), "an hour ago: not due")
+    check.expect(UpdateSchedule.isDue(lastCheck: now.addingTimeInterval(-86_400), now: now), "a day ago: due")
+    check.expect(UpdateSchedule.isDue(lastCheck: now.addingTimeInterval(3600), now: now), "a check in the future (clock moved back): due")
 }
 
 // MARK: - Chip generation and its temperature keys
