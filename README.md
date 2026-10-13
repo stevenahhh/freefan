@@ -17,7 +17,7 @@ needs a right-click on the app and **Open** (or `xattr -dr com.apple.quarantine 
 
 ## Updates
 
-OpenFan looks for a newer release when it starts and when you open the popover, at most once a day. Nothing appears
+OpenFan looks for a newer release every time it starts, and when you open the popover at most once a day. Nothing appears
 unless there is one: then the footer shows **Update available!**. Clicking it downloads the release, checks its
 Ed25519 signature against the key built into the app and the app's code signature, swaps it in and relaunches. There
 are no notifications and no background timer. When a release changes the helper, the popover says so and the ☰ menu

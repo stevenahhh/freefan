@@ -68,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             guard let self else { return }
             self.popoverController?.update(self.snapshot())
         }
-        updater.checkIfDue()
+        updater.checkAtLaunch()
 
         smcQueue.async { [weak self] in
             guard let self else { return }
