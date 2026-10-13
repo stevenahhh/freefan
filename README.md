@@ -9,6 +9,20 @@ Minimal macOS menu-bar fan control for Apple Silicon.
 - Built-in presets that cannot be changed by accident, and your own on top
 - Near-zero CPU and memory overhead
 
+## Download
+
+Each [release](https://github.com/stevenahhh/openfan/releases/latest) from 1.4 on carries `OpenFan.zip`. Unzip it,
+move `OpenFan.app` to `/Applications` and open it. The app is ad-hoc signed and not notarized, so the first launch
+needs a right-click on the app and **Open** (or `xattr -dr com.apple.quarantine /Applications/OpenFan.app`).
+
+## Updates
+
+OpenFan looks for a newer release when it starts and when you open the popover, at most once a day. Nothing appears
+unless there is one: then the footer shows **Update available!**. Clicking it downloads the release, checks its
+Ed25519 signature against the key built into the app and the app's code signature, swaps it in and relaunches. There
+are no notifications and no background timer. When a release changes the helper, the popover says so and the ☰ menu
+gets **Update Helper…** (one administrator password).
+
 ## Build and run
 
 ```sh
@@ -141,8 +155,7 @@ Pull requests are welcome, above all for support of other Macs. See [CONTRIBUTIN
 There is no warranty, and this software writes to your Mac's SMC through a root helper. Read the safety model above,
 check [docs/hardware](docs/hardware/README.md) to see whether your model has been verified, and use it at your own risk.
 
-OpenFan is source-only. The app is ad-hoc signed and not notarized, so no prebuilt download is published; build it
-yourself as described above.
+The prebuilt app is ad-hoc signed and not notarized; you can always build it yourself as described above.
 
 OpenFan was written from scratch. The AppleSMC protocol and the key names were learned from open-source projects such
 as [Stats](https://github.com/exelban/stats), [SMCKit](https://github.com/beltex/SMCKit),
