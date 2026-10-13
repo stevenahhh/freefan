@@ -11,23 +11,81 @@ public enum FanControlInput: String, Codable, CaseIterable, Sendable {
     case battery
 }
 
-// MARK: - Key catalogue (verified present on Mac17,9 / M5 Pro)
+// MARK: - Chip generation
 
+/// The Apple silicon generation, from the chip's name (`Apple M3 Max` is 3). The temperature keys differ between
+/// generations, while every model of one generation (MacBook Air and Pro, Mac mini, iMac, Mac Studio) shares them.
+public struct ChipGeneration: Equatable, Sendable {
+    /// Nil for a chip whose name carries no M generation.
+    public let number: Int?
+
+    public init(number: Int?) {
+        self.number = number
+    }
+
+    public init(brand: String) {
+        let words = brand.split(separator: " ")
+        let model = words.first { $0.count > 1 && $0.first == "M" && $0.dropFirst().allSatisfy(\.isNumber) }
+        number = model.flatMap { Int($0.dropFirst()) }
+    }
+
+    public static let current = ChipGeneration(brand: sysctlString("machdep.cpu.brand_string"))
+}
+
+func sysctlString(_ name: String) -> String {
+    var size = 0
+    guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return "" }
+    var buffer = [CChar](repeating: 0, count: size)
+    guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return "" }
+    return String(cString: buffer)
+}
+
+// MARK: - Key catalogue
+
+/// Temperature keys by generation. Discovery keeps only the keys this Mac has, so a key a smaller chip lacks costs one
+/// probe at launch. M5 was verified on Mac17,9; M1 to M4 follow exelban/stats (MIT) and agoodkind/macos-smc-fan,
+/// which agree on them, and were not verified here.
 public enum SensorCatalog {
-    /// Super cores: Tp00 Tp04 Tp08 Tp0C Tp0G Tp0K. Performance cores: Tp0O Tp0R Tp0U Tp0X Tp0a Tp0d
-    /// Tp0g Tp0j Tp0m Tp0p Tp0u Tp0y. All 18 keys verified present on this machine.
-    public static let cpuKeys: [String] = [
-        "Tp00", "Tp04", "Tp08", "Tp0C", "Tp0G", "Tp0K",
-        "Tp0O", "Tp0R", "Tp0U", "Tp0X", "Tp0a", "Tp0d",
-        "Tp0g", "Tp0j", "Tp0m", "Tp0p", "Tp0u", "Tp0y",
+    static let cpuByGeneration: [Int: [String]] = [
+        1: ["Tp09", "Tp0T", "Tp01", "Tp05", "Tp0D", "Tp0H", "Tp0L", "Tp0P", "Tp0X", "Tp0b"],
+        2: ["Tp1h", "Tp1t", "Tp1p", "Tp1l", "Tp01", "Tp05", "Tp09", "Tp0D", "Tp0X", "Tp0b", "Tp0f", "Tp0j"],
+        3: ["Te05", "Te0L", "Te0P", "Te0S", "Tf04", "Tf09", "Tf0A", "Tf0B", "Tf0D", "Tf0E",
+            "Tf44", "Tf49", "Tf4A", "Tf4B", "Tf4D", "Tf4E"],
+        4: ["Te05", "Te0S", "Te09", "Te0H", "Tp01", "Tp05", "Tp09", "Tp0D", "Tp0V", "Tp0Y", "Tp0b", "Tp0e"],
+        // Super cores Tp00 to Tp0K, performance cores Tp0O to Tp0y; all 18 present on Mac17,9.
+        5: ["Tp00", "Tp04", "Tp08", "Tp0C", "Tp0G", "Tp0K",
+            "Tp0O", "Tp0R", "Tp0U", "Tp0X", "Tp0a", "Tp0d",
+            "Tp0g", "Tp0j", "Tp0m", "Tp0p", "Tp0u", "Tp0y"],
     ]
 
-    /// Tg0U Tg0X Tg0d Tg0g Tg0j Tg1Y Tg1c. Tg1g is absent on Mac17,9.
-    public static let gpuKeys: [String] = [
-        "Tg0U", "Tg0X", "Tg0d", "Tg0g", "Tg0j", "Tg1Y", "Tg1c",
+    static let gpuByGeneration: [Int: [String]] = [
+        1: ["Tg05", "Tg0D", "Tg0L", "Tg0T"],
+        2: ["Tg0f", "Tg0j"],
+        3: ["Tf14", "Tf18", "Tf19", "Tf1A", "Tf24", "Tf28", "Tf29", "Tf2A"],
+        4: ["Tg1U", "Tg1k", "Tg0K", "Tg0L", "Tg0d", "Tg0e", "Tg0j", "Tg0k"],
+        // Tg1g is absent on Mac17,9 (M5 Pro) and listed for the larger M5 GPUs.
+        5: ["Tg0U", "Tg0X", "Tg0d", "Tg0g", "Tg0j", "Tg1Y", "Tg1c", "Tg1g"],
     ]
 
-    /// TB0T TB1T TB2T: the battery pack sensors (flt, Celsius). All three verified present on Mac17,9.
+    /// A generation newer than the catalogue gets every known key, so it still finds the ones it kept.
+    public static func cpuKeys(for generation: ChipGeneration) -> [String] {
+        keys(cpuByGeneration, generation)
+    }
+
+    public static func gpuKeys(for generation: ChipGeneration) -> [String] {
+        keys(gpuByGeneration, generation)
+    }
+
+    private static func keys(_ table: [Int: [String]], _ generation: ChipGeneration) -> [String] {
+        if let number = generation.number, let known = table[number] { return known }
+        var seen = Set<String>()
+        return table.keys.sorted().flatMap { table[$0] ?? [] }.filter { seen.insert($0).inserted }
+    }
+
+    public static let cpuKeys = cpuKeys(for: .current)
+    public static let gpuKeys = gpuKeys(for: .current)
+
+    /// TB0T TB1T TB2T: the battery pack sensors (flt, Celsius), verified on Mac17,9. A desktop has none of them.
     public static let batteryKeys: [String] = ["TB0T", "TB1T", "TB2T"]
 
     /// Mean of the usable battery readings. A reading counts when it is finite, above 0 (a dead sensor reports
@@ -50,13 +108,16 @@ public struct FanInfo: Codable, Equatable, Sendable {
     public let minRPM: Float
     public let maxRPM: Float
 
-    public init(index: Int, minRPM: Float, maxRPM: Float) {
+    /// `F{n}md` on M5 (Mac17,9), `F{n}Md` on earlier Apple silicon and Intel. Telemetry finds out which one exists.
+    public let modeKey: String
+
+    public init(index: Int, minRPM: Float, maxRPM: Float, modeKey: String? = nil) {
         self.index = index
         self.minRPM = minRPM
         self.maxRPM = maxRPM
+        self.modeKey = modeKey ?? "F\(index)md"
     }
 
-    public var modeKey: String { "F\(index)md" }
     public var targetKey: String { "F\(index)Tg" }
     public var actualKey: String { "F\(index)Ac" }
 
@@ -140,6 +201,10 @@ public struct SensorSet: OptionSet, Sendable {
 /// Discovers which sensor keys exist once, then reads them each tick.
 public final class Telemetry {
     public private(set) var fans: [FanInfo] = []
+    /// False on a desktop: no battery sensor exists.
+    public let hasBattery: Bool
+    /// M3 and M4 MacBook Pros keep the fans in system mode until the force-test key `Ftst` is set.
+    public let hasForceTest: Bool
 
     private let smc: SMC
     private let presentCPUKeys: [String]
@@ -155,6 +220,8 @@ public final class Telemetry {
         self.presentCPUKeys = SensorCatalog.cpuKeys.filter { smc.keyExists($0) }
         self.presentGPUKeys = SensorCatalog.gpuKeys.filter { smc.keyExists($0) }
         self.presentBatteryKeys = SensorCatalog.batteryKeys.filter { smc.keyExists($0) }
+        self.hasBattery = !presentBatteryKeys.isEmpty
+        self.hasForceTest = smc.keyExists("Ftst")
 
         // FNum is a ui8 key on this platform; fall back to a ui32 variant if that is what is present.
         var fanCount = 0
@@ -171,7 +238,9 @@ public final class Telemetry {
             guard let minRPM = try? smc.readFloat("F\(index)Mn"),
                   let maxRPM = try? smc.readFloat("F\(index)Mx"),
                   minRPM.isFinite, maxRPM.isFinite, minRPM > 0, maxRPM > minRPM else { continue }
-            discovered.append(FanInfo(index: index, minRPM: minRPM, maxRPM: maxRPM))
+            // A fan without a mode key cannot be handed back to the system, so it is never controlled.
+            guard let modeKey = ["F\(index)md", "F\(index)Md"].first(where: { smc.keyExists($0) }) else { continue }
+            discovered.append(FanInfo(index: index, minRPM: minRPM, maxRPM: maxRPM, modeKey: modeKey))
         }
         self.fans = discovered
     }

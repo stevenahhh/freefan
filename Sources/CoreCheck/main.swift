@@ -498,4 +498,25 @@ do {
     check.expectEqual(store.settings.menuBarTemplate.count, AppSettings.maxTemplateLength, "setTemplate cuts to the limit")
 }
 
+// MARK: - Chip generation and its temperature keys
+
+do {
+    check.expectEqual(ChipGeneration(brand: "Apple M5 Pro").number, 5, "M5 Pro is generation 5")
+    check.expectEqual(ChipGeneration(brand: "Apple M1").number, 1, "M1 is generation 1")
+    check.expectEqual(ChipGeneration(brand: "Apple M4 Max").number, 4, "M4 Max is generation 4")
+    check.expectEqual(ChipGeneration(brand: "Apple M3 Ultra").number, 3, "M3 Ultra is generation 3")
+    check.expectEqual(ChipGeneration(brand: "Intel(R) Core(TM) i9").number, nil, "an Intel chip has no M generation")
+    check.expectEqual(ChipGeneration(brand: "").number, nil, "an empty brand has no generation")
+    check.expect(SensorCatalog.cpuKeys(for: ChipGeneration(number: 5)).contains("Tp0O"), "M5 CPU keys include Tp0O")
+    check.expect(SensorCatalog.cpuKeys(for: ChipGeneration(number: 3)).contains("Tf04"), "M3 CPU keys include Tf04")
+    check.expect(SensorCatalog.gpuKeys(for: ChipGeneration(number: 1)).contains("Tg05"), "M1 GPU keys include Tg05")
+    let unknown = SensorCatalog.cpuKeys(for: ChipGeneration(number: 9))
+    check.expect(unknown.contains("Tp00") && unknown.contains("Tp09") && unknown.contains("Te05"), "a newer chip gets every known CPU key")
+    check.expectEqual(unknown.count, Set(unknown).count, "without duplicates")
+    for generation in 1...5 {
+        check.expect(!SensorCatalog.cpuKeys(for: ChipGeneration(number: generation)).isEmpty, "M\(generation) has CPU keys")
+        check.expect(!SensorCatalog.gpuKeys(for: ChipGeneration(number: generation)).isEmpty, "M\(generation) has GPU keys")
+    }
+}
+
 exit(check.summary())

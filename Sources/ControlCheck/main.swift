@@ -268,4 +268,26 @@ do {
     }
 }
 
+// 15. One fan (Mac mini, Mac Studio, a MacBook Pro with one fan) and no fan at all (a MacBook Air).
+do {
+    let single = [FanInfo(index: 0, minRPM: 1000, maxRPM: 4900, modeKey: "F0Md")]
+    let c = FanController(fans: single)
+    _ = check.expectNoThrow("one-fan curve accepted") { try c.setCurve(steep, input: .max) }
+    let a = c.tick(temperature: 70, fans: [FanObservation(rpm: 1200, manual: false)])
+    check.expectEqual(a, [.setTarget(fan: 0, rpm: single[0].rpm(percent: steep.percent(at: 70))), .setManual(fan: 0, on: true)],
+                      "one fan: target, then manual, and nothing for a fan that does not exist")
+    let p = c.tick(temperature: 97, fans: [FanObservation(rpm: 3000, manual: true)])
+    check.expectEqual(p, [.setTarget(fan: 0, rpm: 4900)], "one fan in panic runs at its own Mx")
+    let cold = c.tick(temperature: 20, fans: [FanObservation(rpm: 4900, manual: true)])
+    check.expectEqual(c.mode, .curve, "the cold zero-fan zone keeps the curve")
+    check.expectEqual(cold, [.setManual(fan: 0, on: false)], "one fan leaving panic into the zero-fan zone goes back to macOS")
+    check.expectEqual(single[0].modeKey, "F0Md", "the probed mode key is kept")
+    check.expectEqual(FanInfo(index: 1, minRPM: 1, maxRPM: 2).modeKey, "F1md", "the default mode key is the M5 one")
+
+    let none = FanController(fans: [])
+    _ = check.expectNoThrow("a curve on a fanless Mac is accepted") { try none.setCurve(steep, input: .max) }
+    check.expectEqual(none.tick(temperature: 70, fans: []), [], "a fanless Mac never gets an SMC write")
+    check.expectEqual(none.tick(temperature: 99, fans: []), [], "not even in panic")
+}
+
 exit(check.summary())
