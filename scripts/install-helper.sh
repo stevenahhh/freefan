@@ -30,27 +30,6 @@ if [[ ! -f "${HELPER_SOURCE}" ]]; then
     exit 1
 fi
 
-# Remove the helper of the project's earlier name (FreeFan). Stopping it makes it hand the fans back to macOS; two
-# helpers must never both hold the SMC. Nothing to do on a Mac that never had it.
-LEGACY_LABEL="com.stevenahhh.freefan.helper"
-LEGACY_FILES=(
-    "/Library/LaunchDaemons/com.stevenahhh.freefan.helper.plist"
-    "/Library/PrivilegedHelperTools/com.stevenahhh.freefan.helper"
-    "/var/run/com.stevenahhh.freefan.sock"
-    "/var/log/com.stevenahhh.freefan.helper.log"
-)
-legacy_found=false
-launchctl print "system/${LEGACY_LABEL}" >/dev/null 2>&1 && legacy_found=true
-for file in "${LEGACY_FILES[@]}"; do
-    [[ -e "${file}" ]] && legacy_found=true
-done
-if [[ "${legacy_found}" == true ]]; then
-    echo "Removing the old FreeFan helper..."
-    launchctl bootout "system/${LEGACY_LABEL}" 2>/dev/null || true
-    rm -f "${LEGACY_FILES[@]}"
-    echo "PASS: Old FreeFan helper stopped and removed"
-fi
-
 # Copy helper binary to privileged location
 echo "Installing helper binary to ${TOOL_PATH}..."
 cp "${HELPER_SOURCE}" "${TOOL_PATH}"
